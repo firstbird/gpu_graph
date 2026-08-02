@@ -1,0 +1,1787 @@
+{
+  "arbiter/mali_kbase_arbif.c": {
+    "mtime": 1785064746.09,
+    "ast_hash": "4249eddca27c0bd724f63d6582107e0e",
+    "semantic_hash": "4249eddca27c0bd724f63d6582107e0e"
+  },
+  "arbiter/mali_kbase_arbif.h": {
+    "mtime": 1785064746.091,
+    "ast_hash": "6e7862d84d6a40ac002c71f2630a32b6",
+    "semantic_hash": "6e7862d84d6a40ac002c71f2630a32b6"
+  },
+  "arbiter/mali_kbase_arbiter_defs.h": {
+    "mtime": 1785064746.092,
+    "ast_hash": "7fa1ddafd0ec18ca2f88180d571151e0",
+    "semantic_hash": "7fa1ddafd0ec18ca2f88180d571151e0"
+  },
+  "arbiter/mali_kbase_arbiter_interface.h": {
+    "mtime": 1785064746.095,
+    "ast_hash": "4b8e4b212d2b234db188d2ddca9f9d82",
+    "semantic_hash": "4b8e4b212d2b234db188d2ddca9f9d82"
+  },
+  "arbiter/mali_kbase_arbiter_pm.c": {
+    "mtime": 1785064746.098,
+    "ast_hash": "b5b1a34d1d7a8c0e6d0f798aa79c86ab",
+    "semantic_hash": "b5b1a34d1d7a8c0e6d0f798aa79c86ab"
+  },
+  "arbiter/mali_kbase_arbiter_pm.h": {
+    "mtime": 1785064746.103,
+    "ast_hash": "4f5021ed3b4e9b71c35f133951abc48f",
+    "semantic_hash": "4f5021ed3b4e9b71c35f133951abc48f"
+  },
+  "backend/gpu/mali_kbase_backend_config.h": {
+    "mtime": 1785064746.109,
+    "ast_hash": "f5c761e2149e50a046588368c1e158e4",
+    "semantic_hash": "f5c761e2149e50a046588368c1e158e4"
+  },
+  "backend/gpu/mali_kbase_cache_policy_backend.c": {
+    "mtime": 1785064746.112,
+    "ast_hash": "e36dd0eef6c40730b997cd636c1bb1da",
+    "semantic_hash": "e36dd0eef6c40730b997cd636c1bb1da"
+  },
+  "backend/gpu/mali_kbase_cache_policy_backend.h": {
+    "mtime": 1785064746.112,
+    "ast_hash": "473a8470dcd1a6eaa1bb09be07563bd5",
+    "semantic_hash": "473a8470dcd1a6eaa1bb09be07563bd5"
+  },
+  "backend/gpu/mali_kbase_clk_rate_trace_mgr.c": {
+    "mtime": 1785064746.113,
+    "ast_hash": "5d9a656cdc821e2a27b3ceab8c6e4aab",
+    "semantic_hash": "5d9a656cdc821e2a27b3ceab8c6e4aab"
+  },
+  "backend/gpu/mali_kbase_clk_rate_trace_mgr.h": {
+    "mtime": 1785064746.114,
+    "ast_hash": "da5142ae1e0218a55c620b4b734c2139",
+    "semantic_hash": "da5142ae1e0218a55c620b4b734c2139"
+  },
+  "backend/gpu/mali_kbase_debug_job_fault_backend.c": {
+    "mtime": 1785064746.115,
+    "ast_hash": "58bf8f044edb29eeb2d6f3c3c0bf4d80",
+    "semantic_hash": "58bf8f044edb29eeb2d6f3c3c0bf4d80"
+  },
+  "backend/gpu/mali_kbase_devfreq.c": {
+    "mtime": 1785064746.118,
+    "ast_hash": "62208cfafc752dc13dd01fadf280f2f5",
+    "semantic_hash": "62208cfafc752dc13dd01fadf280f2f5"
+  },
+  "backend/gpu/mali_kbase_devfreq.h": {
+    "mtime": 1785064746.12,
+    "ast_hash": "3661fcf2444764ebd6b912943f209596",
+    "semantic_hash": "3661fcf2444764ebd6b912943f209596"
+  },
+  "backend/gpu/mali_kbase_gpuprops_backend.c": {
+    "mtime": 1785064746.12,
+    "ast_hash": "12dd2ca0391a747add453eedfd836130",
+    "semantic_hash": "12dd2ca0391a747add453eedfd836130"
+  },
+  "backend/gpu/mali_kbase_instr_backend.c": {
+    "mtime": 1785064746.121,
+    "ast_hash": "25b6d1ba9299d01971915e6d833b2dba",
+    "semantic_hash": "25b6d1ba9299d01971915e6d833b2dba"
+  },
+  "backend/gpu/mali_kbase_instr_defs.h": {
+    "mtime": 1785064746.122,
+    "ast_hash": "bd574a7bc75c9335a0a146b4d1a4022f",
+    "semantic_hash": "bd574a7bc75c9335a0a146b4d1a4022f"
+  },
+  "backend/gpu/mali_kbase_instr_internal.h": {
+    "mtime": 1785064746.122,
+    "ast_hash": "e3663c78df031fb8ab0ce3a83da9815b",
+    "semantic_hash": "e3663c78df031fb8ab0ce3a83da9815b"
+  },
+  "backend/gpu/mali_kbase_irq_internal.h": {
+    "mtime": 1785064746.123,
+    "ast_hash": "8a7e4dd9faea80321344419cac1c9097",
+    "semantic_hash": "8a7e4dd9faea80321344419cac1c9097"
+  },
+  "backend/gpu/mali_kbase_irq_linux.c": {
+    "mtime": 1785064746.126,
+    "ast_hash": "b79f33e89ac728a748cea7732a29eb24",
+    "semantic_hash": "b79f33e89ac728a748cea7732a29eb24"
+  },
+  "backend/gpu/mali_kbase_jm_as.c": {
+    "mtime": 1785064746.127,
+    "ast_hash": "9c56957ee02a53c1c173241ddf5e7e35",
+    "semantic_hash": "9c56957ee02a53c1c173241ddf5e7e35"
+  },
+  "backend/gpu/mali_kbase_jm_defs.h": {
+    "mtime": 1785064746.128,
+    "ast_hash": "213101ce02a536ac831e24a7693c6ea6",
+    "semantic_hash": "213101ce02a536ac831e24a7693c6ea6"
+  },
+  "backend/gpu/mali_kbase_jm_hw.c": {
+    "mtime": 1785064746.131,
+    "ast_hash": "90aac520bd83e7af30e9e3970cf4745b",
+    "semantic_hash": "90aac520bd83e7af30e9e3970cf4745b"
+  },
+  "backend/gpu/mali_kbase_jm_internal.h": {
+    "mtime": 1785064746.134,
+    "ast_hash": "488793c8db33b34bc0be5b5fcb4b30b2",
+    "semantic_hash": "488793c8db33b34bc0be5b5fcb4b30b2"
+  },
+  "backend/gpu/mali_kbase_jm_rb.c": {
+    "mtime": 1785064746.135,
+    "ast_hash": "5c6e7330a6af7f7a48b88a227b5f1498",
+    "semantic_hash": "5c6e7330a6af7f7a48b88a227b5f1498"
+  },
+  "backend/gpu/mali_kbase_jm_rb.h": {
+    "mtime": 1785064746.138,
+    "ast_hash": "48a43d0ed439418cde76432e72cd2afd",
+    "semantic_hash": "48a43d0ed439418cde76432e72cd2afd"
+  },
+  "backend/gpu/mali_kbase_js_backend.c": {
+    "mtime": 1785064746.141,
+    "ast_hash": "cb9b0523b60994d6005e952484f3d8e2",
+    "semantic_hash": "cb9b0523b60994d6005e952484f3d8e2"
+  },
+  "backend/gpu/mali_kbase_js_internal.h": {
+    "mtime": 1785064746.142,
+    "ast_hash": "dfde345a8cf26a456f58756b47963c07",
+    "semantic_hash": "dfde345a8cf26a456f58756b47963c07"
+  },
+  "backend/gpu/mali_kbase_l2_mmu_config.c": {
+    "mtime": 1785064746.143,
+    "ast_hash": "b61782eb31f20f3e45262b65239dfb20",
+    "semantic_hash": "b61782eb31f20f3e45262b65239dfb20"
+  },
+  "backend/gpu/mali_kbase_l2_mmu_config.h": {
+    "mtime": 1785064746.143,
+    "ast_hash": "9749edd6e467c00b59bc17bc694ac05b",
+    "semantic_hash": "9749edd6e467c00b59bc17bc694ac05b"
+  },
+  "backend/gpu/mali_kbase_model_dummy.c": {
+    "mtime": 1785064746.144,
+    "ast_hash": "ee6a8e3466c9d0634418e9d904edc919",
+    "semantic_hash": "ee6a8e3466c9d0634418e9d904edc919"
+  },
+  "backend/gpu/mali_kbase_model_dummy.h": {
+    "mtime": 1785064746.146,
+    "ast_hash": "9ed09886c9e2ebe221263babd8b073db",
+    "semantic_hash": "9ed09886c9e2ebe221263babd8b073db"
+  },
+  "backend/gpu/mali_kbase_model_error_generator.c": {
+    "mtime": 1785064746.15,
+    "ast_hash": "fefc96e3c70e8eecc49e5549617022cd",
+    "semantic_hash": "fefc96e3c70e8eecc49e5549617022cd"
+  },
+  "backend/gpu/mali_kbase_model_linux.c": {
+    "mtime": 1785064746.152,
+    "ast_hash": "bb87cf577fa6f64a6924a30ea0041541",
+    "semantic_hash": "bb87cf577fa6f64a6924a30ea0041541"
+  },
+  "backend/gpu/mali_kbase_model_linux.h": {
+    "mtime": 1785064746.152,
+    "ast_hash": "1fa44b62a8ce6da0354cc5552a8c0a49",
+    "semantic_hash": "1fa44b62a8ce6da0354cc5552a8c0a49"
+  },
+  "backend/gpu/mali_kbase_pm_adaptive.c": {
+    "mtime": 1785064746.153,
+    "ast_hash": "1463c3de70b527d6b1c319a0f648f572",
+    "semantic_hash": "1463c3de70b527d6b1c319a0f648f572"
+  },
+  "backend/gpu/mali_kbase_pm_adaptive.h": {
+    "mtime": 1785064746.153,
+    "ast_hash": "3668651b206d429b6c627a6a5bfb9b91",
+    "semantic_hash": "3668651b206d429b6c627a6a5bfb9b91"
+  },
+  "backend/gpu/mali_kbase_pm_always_on.c": {
+    "mtime": 1785064746.153,
+    "ast_hash": "95e18dd51aed5b2c708bca41e0ba7133",
+    "semantic_hash": "95e18dd51aed5b2c708bca41e0ba7133"
+  },
+  "backend/gpu/mali_kbase_pm_always_on.h": {
+    "mtime": 1785064746.154,
+    "ast_hash": "acc368a73cbe1d894e27a2ab15e3b424",
+    "semantic_hash": "acc368a73cbe1d894e27a2ab15e3b424"
+  },
+  "backend/gpu/mali_kbase_pm_backend.c": {
+    "mtime": 1785064746.155,
+    "ast_hash": "0e02efa003f3afea3f17ac97081f2e94",
+    "semantic_hash": "0e02efa003f3afea3f17ac97081f2e94"
+  },
+  "backend/gpu/mali_kbase_pm_ca.c": {
+    "mtime": 1785064746.157,
+    "ast_hash": "e128d2ff7ff8d8f505ab56de45d8f861",
+    "semantic_hash": "e128d2ff7ff8d8f505ab56de45d8f861"
+  },
+  "backend/gpu/mali_kbase_pm_ca.h": {
+    "mtime": 1785064746.158,
+    "ast_hash": "fe79f76e2fe4ee6e303bdee56964217e",
+    "semantic_hash": "fe79f76e2fe4ee6e303bdee56964217e"
+  },
+  "backend/gpu/mali_kbase_pm_ca_devfreq.h": {
+    "mtime": 1785064746.159,
+    "ast_hash": "f0d1ba8d00a9baebfd382051d1fbe12a",
+    "semantic_hash": "f0d1ba8d00a9baebfd382051d1fbe12a"
+  },
+  "backend/gpu/mali_kbase_pm_coarse_demand.c": {
+    "mtime": 1785064746.159,
+    "ast_hash": "8e3cbf0a6263e38dd238ca73bfb328f2",
+    "semantic_hash": "8e3cbf0a6263e38dd238ca73bfb328f2"
+  },
+  "backend/gpu/mali_kbase_pm_coarse_demand.h": {
+    "mtime": 1785064746.159,
+    "ast_hash": "7ced4887aeb85a94dd866f0975abc54d",
+    "semantic_hash": "7ced4887aeb85a94dd866f0975abc54d"
+  },
+  "backend/gpu/mali_kbase_pm_defs.h": {
+    "mtime": 1785064746.166,
+    "ast_hash": "5dab1fe18b75c9da2175e0a3050e28b8",
+    "semantic_hash": "5dab1fe18b75c9da2175e0a3050e28b8"
+  },
+  "backend/gpu/mali_kbase_pm_driver.c": {
+    "mtime": 1785064746.169,
+    "ast_hash": "922c274ef0f3c286cab225698cd886f9",
+    "semantic_hash": "922c274ef0f3c286cab225698cd886f9"
+  },
+  "backend/gpu/mali_kbase_pm_event_log.c": {
+    "mtime": 1785064746.175,
+    "ast_hash": "12804aef1b928509194fecacbf08780c",
+    "semantic_hash": "12804aef1b928509194fecacbf08780c"
+  },
+  "backend/gpu/mali_kbase_pm_event_log.h": {
+    "mtime": 1785064746.175,
+    "ast_hash": "587e0f78e9e835baadf4604e40dd9ced",
+    "semantic_hash": "587e0f78e9e835baadf4604e40dd9ced"
+  },
+  "backend/gpu/mali_kbase_pm_internal.h": {
+    "mtime": 1785064746.176,
+    "ast_hash": "e46c1b35ea1b5580a1b11311c0ece62a",
+    "semantic_hash": "e46c1b35ea1b5580a1b11311c0ece62a"
+  },
+  "backend/gpu/mali_kbase_pm_l2_states.h": {
+    "mtime": 1785064746.179,
+    "ast_hash": "123aa2acfa9030f2a5e5e15e3c96736a",
+    "semantic_hash": "123aa2acfa9030f2a5e5e15e3c96736a"
+  },
+  "backend/gpu/mali_kbase_pm_mcu_states.h": {
+    "mtime": 1785064746.183,
+    "ast_hash": "abf6254c1ee4c518642fb1a4bbf25ebc",
+    "semantic_hash": "abf6254c1ee4c518642fb1a4bbf25ebc"
+  },
+  "backend/gpu/mali_kbase_pm_metrics.c": {
+    "mtime": 1785064746.186,
+    "ast_hash": "fe7e902de3158a70e255f71bdd33631d",
+    "semantic_hash": "fe7e902de3158a70e255f71bdd33631d"
+  },
+  "backend/gpu/mali_kbase_pm_policy.c": {
+    "mtime": 1785064746.188,
+    "ast_hash": "1fcbd968a747b615fcbac984bfd1b93f",
+    "semantic_hash": "1fcbd968a747b615fcbac984bfd1b93f"
+  },
+  "backend/gpu/mali_kbase_pm_policy.h": {
+    "mtime": 1785064746.189,
+    "ast_hash": "1fa88cc7a40d3a4d56b7ef44ce62eff7",
+    "semantic_hash": "1fa88cc7a40d3a4d56b7ef44ce62eff7"
+  },
+  "backend/gpu/mali_kbase_pm_shader_states.h": {
+    "mtime": 1785064746.19,
+    "ast_hash": "ce4356fa0cba01a3d931446eb71f0bd6",
+    "semantic_hash": "ce4356fa0cba01a3d931446eb71f0bd6"
+  },
+  "backend/gpu/mali_kbase_time.c": {
+    "mtime": 1785064746.19,
+    "ast_hash": "a9418f727aeb2b3a183b41d399b739f9",
+    "semantic_hash": "a9418f727aeb2b3a183b41d399b739f9"
+  },
+  "context/backend/mali_kbase_context_csf.c": {
+    "mtime": 1785064746.192,
+    "ast_hash": "85c9dc84e713d744b4bf0e65f7077ebb",
+    "semantic_hash": "85c9dc84e713d744b4bf0e65f7077ebb"
+  },
+  "context/backend/mali_kbase_context_jm.c": {
+    "mtime": 1785064746.194,
+    "ast_hash": "5ad6ec6e08f32761d49de8dd3ca6a348",
+    "semantic_hash": "5ad6ec6e08f32761d49de8dd3ca6a348"
+  },
+  "context/mali_kbase_context.c": {
+    "mtime": 1785064746.194,
+    "ast_hash": "61b3522f1944f1d04351246d35557a60",
+    "semantic_hash": "61b3522f1944f1d04351246d35557a60"
+  },
+  "context/mali_kbase_context.h": {
+    "mtime": 1785064746.195,
+    "ast_hash": "dcb1c9192be57b40f17d8bc70f358657",
+    "semantic_hash": "dcb1c9192be57b40f17d8bc70f358657"
+  },
+  "context/mali_kbase_context_internal.h": {
+    "mtime": 1785064746.196,
+    "ast_hash": "475487c5e3bf82ec8111444a2579cb26",
+    "semantic_hash": "475487c5e3bf82ec8111444a2579cb26"
+  },
+  "csf/ipa_control/mali_kbase_csf_ipa_control.c": {
+    "mtime": 1785064746.203,
+    "ast_hash": "b193f19ba9d6886e502be94a24079ee6",
+    "semantic_hash": "b193f19ba9d6886e502be94a24079ee6"
+  },
+  "csf/ipa_control/mali_kbase_csf_ipa_control.h": {
+    "mtime": 1785064746.207,
+    "ast_hash": "a3dc8c7b9aea31eb427f3a201369e71e",
+    "semantic_hash": "a3dc8c7b9aea31eb427f3a201369e71e"
+  },
+  "csf/mali_kbase_csf.c": {
+    "mtime": 1785064746.209,
+    "ast_hash": "f976809a25274b2fccb6555c71809eb3",
+    "semantic_hash": "f976809a25274b2fccb6555c71809eb3"
+  },
+  "csf/mali_kbase_csf.h": {
+    "mtime": 1785064746.217,
+    "ast_hash": "6a2f0d9c3c528004544e12a0fa6f2ce5",
+    "semantic_hash": "6a2f0d9c3c528004544e12a0fa6f2ce5"
+  },
+  "csf/mali_kbase_csf_cpu_queue_debugfs.c": {
+    "mtime": 1785064746.218,
+    "ast_hash": "4ffeada68c3f1c7e3dfd19ad2915eeca",
+    "semantic_hash": "4ffeada68c3f1c7e3dfd19ad2915eeca"
+  },
+  "csf/mali_kbase_csf_cpu_queue_debugfs.h": {
+    "mtime": 1785064746.219,
+    "ast_hash": "d104d9b3dfa4103cfa37d4364704716c",
+    "semantic_hash": "d104d9b3dfa4103cfa37d4364704716c"
+  },
+  "csf/mali_kbase_csf_csg_debugfs.c": {
+    "mtime": 1785064746.22,
+    "ast_hash": "81b5282d69566bd29443e34bc8e82264",
+    "semantic_hash": "81b5282d69566bd29443e34bc8e82264"
+  },
+  "csf/mali_kbase_csf_csg_debugfs.h": {
+    "mtime": 1785064746.221,
+    "ast_hash": "6be40b65af93e9306b47cb32984d16d9",
+    "semantic_hash": "6be40b65af93e9306b47cb32984d16d9"
+  },
+  "csf/mali_kbase_csf_defs.h": {
+    "mtime": 1785064746.224,
+    "ast_hash": "f34141621554239279584c9a15a21e39",
+    "semantic_hash": "f34141621554239279584c9a15a21e39"
+  },
+  "csf/mali_kbase_csf_event.c": {
+    "mtime": 1785064746.237,
+    "ast_hash": "63131712e51a2d322871b11160da4a25",
+    "semantic_hash": "63131712e51a2d322871b11160da4a25"
+  },
+  "csf/mali_kbase_csf_event.h": {
+    "mtime": 1785064746.237,
+    "ast_hash": "4c35cf495ff24138060caca0ce89c7d2",
+    "semantic_hash": "4c35cf495ff24138060caca0ce89c7d2"
+  },
+  "csf/mali_kbase_csf_firmware.c": {
+    "mtime": 1785064746.239,
+    "ast_hash": "48b582ff2cb6add15018e16fe5bb7720",
+    "semantic_hash": "48b582ff2cb6add15018e16fe5bb7720"
+  },
+  "csf/mali_kbase_csf_firmware.h": {
+    "mtime": 1785064746.245,
+    "ast_hash": "bfb2a7b43e4c51333913e2a3bd01248c",
+    "semantic_hash": "bfb2a7b43e4c51333913e2a3bd01248c"
+  },
+  "csf/mali_kbase_csf_firmware_cfg.c": {
+    "mtime": 1785064746.249,
+    "ast_hash": "cf46188dc5817f2fe96b2fabf8635602",
+    "semantic_hash": "cf46188dc5817f2fe96b2fabf8635602"
+  },
+  "csf/mali_kbase_csf_firmware_cfg.h": {
+    "mtime": 1785064746.25,
+    "ast_hash": "c5d8f2e2fc7f1a1ba7982a50df12d6f6",
+    "semantic_hash": "c5d8f2e2fc7f1a1ba7982a50df12d6f6"
+  },
+  "csf/mali_kbase_csf_firmware_log.c": {
+    "mtime": 1785064746.25,
+    "ast_hash": "882a9527a681cf0a22c6eb27ad31eb9f",
+    "semantic_hash": "882a9527a681cf0a22c6eb27ad31eb9f"
+  },
+  "csf/mali_kbase_csf_firmware_log.h": {
+    "mtime": 1785064746.251,
+    "ast_hash": "fc95607e10e56cab2b9ef49da69408e4",
+    "semantic_hash": "fc95607e10e56cab2b9ef49da69408e4"
+  },
+  "csf/mali_kbase_csf_firmware_no_mali.c": {
+    "mtime": 1785064746.251,
+    "ast_hash": "7566ebb6b919aca99c19c536a1e8e47c",
+    "semantic_hash": "7566ebb6b919aca99c19c536a1e8e47c"
+  },
+  "csf/mali_kbase_csf_heap_context_alloc.c": {
+    "mtime": 1785064746.254,
+    "ast_hash": "89bd5a7f2205a6fd827f1eca9bb5d1de",
+    "semantic_hash": "89bd5a7f2205a6fd827f1eca9bb5d1de"
+  },
+  "csf/mali_kbase_csf_heap_context_alloc.h": {
+    "mtime": 1785064746.254,
+    "ast_hash": "bf004673fa547843c5defed03c4b49e7",
+    "semantic_hash": "bf004673fa547843c5defed03c4b49e7"
+  },
+  "csf/mali_kbase_csf_kcpu.c": {
+    "mtime": 1785064746.258,
+    "ast_hash": "41a93ad14f7716a9aff4ce0097ab41c4",
+    "semantic_hash": "41a93ad14f7716a9aff4ce0097ab41c4"
+  },
+  "csf/mali_kbase_csf_kcpu.h": {
+    "mtime": 1785064746.265,
+    "ast_hash": "51ab0fc92d88868dfad2c9d3f1f3228f",
+    "semantic_hash": "51ab0fc92d88868dfad2c9d3f1f3228f"
+  },
+  "csf/mali_kbase_csf_kcpu_debugfs.c": {
+    "mtime": 1785064746.266,
+    "ast_hash": "561fddf7e86ea5e3fe21bf442d510026",
+    "semantic_hash": "561fddf7e86ea5e3fe21bf442d510026"
+  },
+  "csf/mali_kbase_csf_kcpu_debugfs.h": {
+    "mtime": 1785064746.266,
+    "ast_hash": "5a06f72a61aa53c6fde2d4f5ea7ef07c",
+    "semantic_hash": "5a06f72a61aa53c6fde2d4f5ea7ef07c"
+  },
+  "csf/mali_kbase_csf_protected_memory.c": {
+    "mtime": 1785064746.266,
+    "ast_hash": "d548273058cde4bb8f354de15877a1d2",
+    "semantic_hash": "d548273058cde4bb8f354de15877a1d2"
+  },
+  "csf/mali_kbase_csf_protected_memory.h": {
+    "mtime": 1785064746.267,
+    "ast_hash": "20fafb16c8bef577070892274a63fa42",
+    "semantic_hash": "20fafb16c8bef577070892274a63fa42"
+  },
+  "csf/mali_kbase_csf_registers.h": {
+    "mtime": 1785064746.267,
+    "ast_hash": "0571c2062a8635c49e40b5bda29fe67a",
+    "semantic_hash": "0571c2062a8635c49e40b5bda29fe67a"
+  },
+  "csf/mali_kbase_csf_reset_gpu.c": {
+    "mtime": 1785064746.274,
+    "ast_hash": "a30b4b7da8f22a71520d1886ec9fe881",
+    "semantic_hash": "a30b4b7da8f22a71520d1886ec9fe881"
+  },
+  "csf/mali_kbase_csf_scheduler.c": {
+    "mtime": 1785064746.281,
+    "ast_hash": "6ef06b19e7485bb5e47c74857d584256",
+    "semantic_hash": "6ef06b19e7485bb5e47c74857d584256"
+  },
+  "csf/mali_kbase_csf_scheduler.h": {
+    "mtime": 1785064746.293,
+    "ast_hash": "a6e328d6fd9167171121654794ec9f38",
+    "semantic_hash": "a6e328d6fd9167171121654794ec9f38"
+  },
+  "csf/mali_kbase_csf_tiler_heap.c": {
+    "mtime": 1785064746.297,
+    "ast_hash": "3b86aeb307a0a5a0a738271cad46fd9e",
+    "semantic_hash": "3b86aeb307a0a5a0a738271cad46fd9e"
+  },
+  "csf/mali_kbase_csf_tiler_heap.h": {
+    "mtime": 1785064746.3,
+    "ast_hash": "c7708fce47df8e44e1734d62c8ff5fc0",
+    "semantic_hash": "c7708fce47df8e44e1734d62c8ff5fc0"
+  },
+  "csf/mali_kbase_csf_tiler_heap_debugfs.c": {
+    "mtime": 1785064746.301,
+    "ast_hash": "fb5c6e45a92f6b1532629e932e164d3e",
+    "semantic_hash": "fb5c6e45a92f6b1532629e932e164d3e"
+  },
+  "csf/mali_kbase_csf_tiler_heap_debugfs.h": {
+    "mtime": 1785064746.301,
+    "ast_hash": "49a0de13928c1ce8e9178ea89158d48b",
+    "semantic_hash": "49a0de13928c1ce8e9178ea89158d48b"
+  },
+  "csf/mali_kbase_csf_tiler_heap_def.h": {
+    "mtime": 1785064746.302,
+    "ast_hash": "ef2cb087057cb39c5a965c9731abd2ec",
+    "semantic_hash": "ef2cb087057cb39c5a965c9731abd2ec"
+  },
+  "csf/mali_kbase_csf_timeout.c": {
+    "mtime": 1785064746.302,
+    "ast_hash": "cc8c308941bcec07a91af116d289edb6",
+    "semantic_hash": "cc8c308941bcec07a91af116d289edb6"
+  },
+  "csf/mali_kbase_csf_timeout.h": {
+    "mtime": 1785064746.303,
+    "ast_hash": "3a4f9cc4c66af320e29dc4fec52723c9",
+    "semantic_hash": "3a4f9cc4c66af320e29dc4fec52723c9"
+  },
+  "csf/mali_kbase_csf_tl_reader.c": {
+    "mtime": 1785064746.303,
+    "ast_hash": "3a2d9fb7f6106bdb02f7f3c125a5a589",
+    "semantic_hash": "3a2d9fb7f6106bdb02f7f3c125a5a589"
+  },
+  "csf/mali_kbase_csf_tl_reader.h": {
+    "mtime": 1785064746.306,
+    "ast_hash": "09bb5b0c83c9908c2b502c99facaad63",
+    "semantic_hash": "09bb5b0c83c9908c2b502c99facaad63"
+  },
+  "csf/mali_kbase_csf_trace_buffer.c": {
+    "mtime": 1785064746.308,
+    "ast_hash": "3a18372ad372771f60d9d7a33f7f6f5f",
+    "semantic_hash": "3a18372ad372771f60d9d7a33f7f6f5f"
+  },
+  "csf/mali_kbase_csf_trace_buffer.h": {
+    "mtime": 1785064746.31,
+    "ast_hash": "9e4905a11aa4f509236bbe4a2e1d24a5",
+    "semantic_hash": "9e4905a11aa4f509236bbe4a2e1d24a5"
+  },
+  "debug/backend/mali_kbase_debug_ktrace_codes_csf.h": {
+    "mtime": 1785064746.311,
+    "ast_hash": "aae234a0ea915eb795b82915871f8bdf",
+    "semantic_hash": "aae234a0ea915eb795b82915871f8bdf"
+  },
+  "debug/backend/mali_kbase_debug_ktrace_codes_jm.h": {
+    "mtime": 1785064746.312,
+    "ast_hash": "a70b2e2c210a8d14ff19b0e6edd2f7e3",
+    "semantic_hash": "a70b2e2c210a8d14ff19b0e6edd2f7e3"
+  },
+  "debug/backend/mali_kbase_debug_ktrace_csf.c": {
+    "mtime": 1785064746.313,
+    "ast_hash": "3a863cda127f55cacdf3b3965292f1cb",
+    "semantic_hash": "3a863cda127f55cacdf3b3965292f1cb"
+  },
+  "debug/backend/mali_kbase_debug_ktrace_csf.h": {
+    "mtime": 1785064746.314,
+    "ast_hash": "239ee9be1d6dd93a9d05d59e02689ee7",
+    "semantic_hash": "239ee9be1d6dd93a9d05d59e02689ee7"
+  },
+  "debug/backend/mali_kbase_debug_ktrace_defs_csf.h": {
+    "mtime": 1785064746.314,
+    "ast_hash": "06e3af7f8279c1fb93b59ed01f97e4ee",
+    "semantic_hash": "06e3af7f8279c1fb93b59ed01f97e4ee"
+  },
+  "debug/backend/mali_kbase_debug_ktrace_defs_jm.h": {
+    "mtime": 1785064746.315,
+    "ast_hash": "fc39345c96608c7655dd782ab8fef6fe",
+    "semantic_hash": "fc39345c96608c7655dd782ab8fef6fe"
+  },
+  "debug/backend/mali_kbase_debug_ktrace_jm.c": {
+    "mtime": 1785064746.315,
+    "ast_hash": "9e5f07d04c46fc043fd5d2222b59ba59",
+    "semantic_hash": "9e5f07d04c46fc043fd5d2222b59ba59"
+  },
+  "debug/backend/mali_kbase_debug_ktrace_jm.h": {
+    "mtime": 1785064746.316,
+    "ast_hash": "14e8984bd86ee8cf644d9c73f00bfb46",
+    "semantic_hash": "14e8984bd86ee8cf644d9c73f00bfb46"
+  },
+  "debug/backend/mali_kbase_debug_linux_ktrace_csf.h": {
+    "mtime": 1785064746.316,
+    "ast_hash": "3c79a7e55e59854adf4c8068668484a5",
+    "semantic_hash": "3c79a7e55e59854adf4c8068668484a5"
+  },
+  "debug/backend/mali_kbase_debug_linux_ktrace_jm.h": {
+    "mtime": 1785064746.319,
+    "ast_hash": "2a80c6e28d987d494e1fa3c161014dca",
+    "semantic_hash": "2a80c6e28d987d494e1fa3c161014dca"
+  },
+  "debug/mali_kbase_debug_ktrace.c": {
+    "mtime": 1785064746.32,
+    "ast_hash": "6985474046ecbfe2b14f0104d5ccfa84",
+    "semantic_hash": "6985474046ecbfe2b14f0104d5ccfa84"
+  },
+  "debug/mali_kbase_debug_ktrace.h": {
+    "mtime": 1785064746.321,
+    "ast_hash": "ee6214617fb57b0d89cc63b8408230ec",
+    "semantic_hash": "ee6214617fb57b0d89cc63b8408230ec"
+  },
+  "debug/mali_kbase_debug_ktrace_codes.h": {
+    "mtime": 1785064746.321,
+    "ast_hash": "f3daa1fc5546daf933daa90424d41ec8",
+    "semantic_hash": "f3daa1fc5546daf933daa90424d41ec8"
+  },
+  "debug/mali_kbase_debug_ktrace_defs.h": {
+    "mtime": 1785064746.322,
+    "ast_hash": "cb968f8f2fb4195d57a0675e9386f1db",
+    "semantic_hash": "cb968f8f2fb4195d57a0675e9386f1db"
+  },
+  "debug/mali_kbase_debug_ktrace_internal.h": {
+    "mtime": 1785064746.322,
+    "ast_hash": "cccc83626afeabe2c6b97a2390513209",
+    "semantic_hash": "cccc83626afeabe2c6b97a2390513209"
+  },
+  "debug/mali_kbase_debug_linux_ktrace.h": {
+    "mtime": 1785064746.323,
+    "ast_hash": "416007347971fc40fca1e55db94f6c14",
+    "semantic_hash": "416007347971fc40fca1e55db94f6c14"
+  },
+  "device/backend/mali_kbase_device_csf.c": {
+    "mtime": 1785064746.324,
+    "ast_hash": "0422544afea5f672e966e043b465caa8",
+    "semantic_hash": "0422544afea5f672e966e043b465caa8"
+  },
+  "device/backend/mali_kbase_device_hw_csf.c": {
+    "mtime": 1785064746.325,
+    "ast_hash": "2aa4a1f5158f57a40eccf8b5c399368a",
+    "semantic_hash": "2aa4a1f5158f57a40eccf8b5c399368a"
+  },
+  "device/backend/mali_kbase_device_hw_jm.c": {
+    "mtime": 1785064746.326,
+    "ast_hash": "5521cdc45c6e1f85b06cdafa17edc813",
+    "semantic_hash": "5521cdc45c6e1f85b06cdafa17edc813"
+  },
+  "device/backend/mali_kbase_device_jm.c": {
+    "mtime": 1785064746.326,
+    "ast_hash": "6e6d14f0f60356c0271fe97e547596f6",
+    "semantic_hash": "6e6d14f0f60356c0271fe97e547596f6"
+  },
+  "device/mali_kbase_device.c": {
+    "mtime": 1785064746.331,
+    "ast_hash": "154ef450434245edb2508ce637289bf3",
+    "semantic_hash": "154ef450434245edb2508ce637289bf3"
+  },
+  "device/mali_kbase_device.h": {
+    "mtime": 1785064746.332,
+    "ast_hash": "7ef0038ce2bcb0191442030c9a7981c3",
+    "semantic_hash": "7ef0038ce2bcb0191442030c9a7981c3"
+  },
+  "device/mali_kbase_device_hw.c": {
+    "mtime": 1785064746.333,
+    "ast_hash": "9e486a44e7471a1ce2031a315d6243b7",
+    "semantic_hash": "9e486a44e7471a1ce2031a315d6243b7"
+  },
+  "device/mali_kbase_device_internal.h": {
+    "mtime": 1785064746.334,
+    "ast_hash": "43772bddee74ae4113e5b26f16d2f4cc",
+    "semantic_hash": "43772bddee74ae4113e5b26f16d2f4cc"
+  },
+  "gpu/backend/mali_kbase_gpu_fault_csf.c": {
+    "mtime": 1785064746.334,
+    "ast_hash": "de23362f44c0e6e790042b1589eea924",
+    "semantic_hash": "de23362f44c0e6e790042b1589eea924"
+  },
+  "gpu/backend/mali_kbase_gpu_fault_jm.c": {
+    "mtime": 1785064746.335,
+    "ast_hash": "9590351de95b5c18e76f6bb85346a503",
+    "semantic_hash": "9590351de95b5c18e76f6bb85346a503"
+  },
+  "gpu/backend/mali_kbase_gpu_regmap_csf.h": {
+    "mtime": 1785064746.335,
+    "ast_hash": "d8036b23eb5d5b1cd8d8be04fbedaac2",
+    "semantic_hash": "d8036b23eb5d5b1cd8d8be04fbedaac2"
+  },
+  "gpu/backend/mali_kbase_gpu_regmap_jm.h": {
+    "mtime": 1785064746.338,
+    "ast_hash": "f12c93d82d04386e1467f444d21eddc2",
+    "semantic_hash": "f12c93d82d04386e1467f444d21eddc2"
+  },
+  "gpu/mali_kbase_gpu.c": {
+    "mtime": 1785064746.339,
+    "ast_hash": "f3752bacb5b0064bfeb62b5d97bf4a13",
+    "semantic_hash": "f3752bacb5b0064bfeb62b5d97bf4a13"
+  },
+  "gpu/mali_kbase_gpu_fault.h": {
+    "mtime": 1785064746.34,
+    "ast_hash": "4357a80c9e99dfa493d8f501d500006c",
+    "semantic_hash": "4357a80c9e99dfa493d8f501d500006c"
+  },
+  "gpu/mali_kbase_gpu_regmap.h": {
+    "mtime": 1785064746.342,
+    "ast_hash": "24bfa678f4750c7c72a98127c258ed75",
+    "semantic_hash": "24bfa678f4750c7c72a98127c258ed75"
+  },
+  "ipa/backend/mali_kbase_ipa_counter_common_csf.c": {
+    "mtime": 1785064746.346,
+    "ast_hash": "91eef0bdbb142c5aae6547f951ee301e",
+    "semantic_hash": "91eef0bdbb142c5aae6547f951ee301e"
+  },
+  "ipa/backend/mali_kbase_ipa_counter_common_csf.h": {
+    "mtime": 1785064746.347,
+    "ast_hash": "4e154fcd50e14141b1f9451ef46a07fb",
+    "semantic_hash": "4e154fcd50e14141b1f9451ef46a07fb"
+  },
+  "ipa/backend/mali_kbase_ipa_counter_common_jm.c": {
+    "mtime": 1785064746.348,
+    "ast_hash": "a51cf0cf408ee0917fb1fedc8513894e",
+    "semantic_hash": "a51cf0cf408ee0917fb1fedc8513894e"
+  },
+  "ipa/backend/mali_kbase_ipa_counter_common_jm.h": {
+    "mtime": 1785064746.348,
+    "ast_hash": "e95dfd863d1a311bd3b7205063424fe7",
+    "semantic_hash": "e95dfd863d1a311bd3b7205063424fe7"
+  },
+  "ipa/backend/mali_kbase_ipa_counter_csf.c": {
+    "mtime": 1785064746.349,
+    "ast_hash": "ad33c9282aa960f2235da3f15d0d14bc",
+    "semantic_hash": "ad33c9282aa960f2235da3f15d0d14bc"
+  },
+  "ipa/backend/mali_kbase_ipa_counter_jm.c": {
+    "mtime": 1785064746.349,
+    "ast_hash": "a999d83a0e43887c56edd6d8695c36fe",
+    "semantic_hash": "a999d83a0e43887c56edd6d8695c36fe"
+  },
+  "ipa/mali_kbase_ipa.c": {
+    "mtime": 1785064746.353,
+    "ast_hash": "51b3907a0743ba117770daae1124dd1a",
+    "semantic_hash": "51b3907a0743ba117770daae1124dd1a"
+  },
+  "ipa/mali_kbase_ipa.h": {
+    "mtime": 1785064746.355,
+    "ast_hash": "9c4a640d02497bdbae67a4e58ccd88db",
+    "semantic_hash": "9c4a640d02497bdbae67a4e58ccd88db"
+  },
+  "ipa/mali_kbase_ipa_debugfs.c": {
+    "mtime": 1785064746.356,
+    "ast_hash": "42e3adafef8505fc5ca24b5d408d5e0c",
+    "semantic_hash": "42e3adafef8505fc5ca24b5d408d5e0c"
+  },
+  "ipa/mali_kbase_ipa_debugfs.h": {
+    "mtime": 1785064746.356,
+    "ast_hash": "78f7ff759801c90db16f70851cb36cf9",
+    "semantic_hash": "78f7ff759801c90db16f70851cb36cf9"
+  },
+  "ipa/mali_kbase_ipa_simple.c": {
+    "mtime": 1785064746.357,
+    "ast_hash": "ac93a1e5746dba0bd0421e7843bd7523",
+    "semantic_hash": "ac93a1e5746dba0bd0421e7843bd7523"
+  },
+  "ipa/mali_kbase_ipa_simple.h": {
+    "mtime": 1785064746.357,
+    "ast_hash": "8df3de9e3229ee3b8fc45201545278e0",
+    "semantic_hash": "8df3de9e3229ee3b8fc45201545278e0"
+  },
+  "jm/mali_kbase_jm_defs.h": {
+    "mtime": 1785064746.359,
+    "ast_hash": "b12463c6d22afec1bade9f11e6b74777",
+    "semantic_hash": "b12463c6d22afec1bade9f11e6b74777"
+  },
+  "jm/mali_kbase_jm_js.h": {
+    "mtime": 1785064746.361,
+    "ast_hash": "681541259f11a824338432a2cedd9f36",
+    "semantic_hash": "681541259f11a824338432a2cedd9f36"
+  },
+  "jm/mali_kbase_js_defs.h": {
+    "mtime": 1785064746.364,
+    "ast_hash": "b0a36b41961c325af21358af0f09f714",
+    "semantic_hash": "b0a36b41961c325af21358af0f09f714"
+  },
+  "mali_base_hwconfig_features.h": {
+    "mtime": 1785064746.369,
+    "ast_hash": "9302ff219464aec48dbe48afd4088502",
+    "semantic_hash": "9302ff219464aec48dbe48afd4088502"
+  },
+  "mali_base_hwconfig_issues.h": {
+    "mtime": 1785064746.37,
+    "ast_hash": "ee6295920a056b6f33b52f3869d3a5e1",
+    "semantic_hash": "ee6295920a056b6f33b52f3869d3a5e1"
+  },
+  "mali_kbase.h": {
+    "mtime": 1785064746.371,
+    "ast_hash": "f3b5d82c2ac268338130120cdf323265",
+    "semantic_hash": "f3b5d82c2ac268338130120cdf323265"
+  },
+  "mali_kbase_as_fault_debugfs.c": {
+    "mtime": 1785064746.373,
+    "ast_hash": "83f74dcbf86ada693698d3ee3ad009db",
+    "semantic_hash": "83f74dcbf86ada693698d3ee3ad009db"
+  },
+  "mali_kbase_as_fault_debugfs.h": {
+    "mtime": 1785064746.374,
+    "ast_hash": "78591fbafba8be0d353de36356e3de6d",
+    "semantic_hash": "78591fbafba8be0d353de36356e3de6d"
+  },
+  "mali_kbase_bits.h": {
+    "mtime": 1785064746.374,
+    "ast_hash": "09d069382375a95fbf461ff8e429482a",
+    "semantic_hash": "09d069382375a95fbf461ff8e429482a"
+  },
+  "mali_kbase_cache_policy.c": {
+    "mtime": 1785064746.374,
+    "ast_hash": "c43911f671afc67492c5a728ade58dfb",
+    "semantic_hash": "c43911f671afc67492c5a728ade58dfb"
+  },
+  "mali_kbase_cache_policy.h": {
+    "mtime": 1785064746.375,
+    "ast_hash": "30d5550ceb2862c179fe2a5b80783dc3",
+    "semantic_hash": "30d5550ceb2862c179fe2a5b80783dc3"
+  },
+  "mali_kbase_caps.h": {
+    "mtime": 1785064746.375,
+    "ast_hash": "9bcfffbf97da007107aeec7a6b539c31",
+    "semantic_hash": "9bcfffbf97da007107aeec7a6b539c31"
+  },
+  "mali_kbase_ccswe.c": {
+    "mtime": 1785064746.377,
+    "ast_hash": "ec3b3b60c9086ca34f78a8e1cc1e5a91",
+    "semantic_hash": "ec3b3b60c9086ca34f78a8e1cc1e5a91"
+  },
+  "mali_kbase_ccswe.h": {
+    "mtime": 1785064746.377,
+    "ast_hash": "9356d2d79039710c174c3703409669e6",
+    "semantic_hash": "9356d2d79039710c174c3703409669e6"
+  },
+  "mali_kbase_config.c": {
+    "mtime": 1785064746.378,
+    "ast_hash": "e41fd24ace90f9ffb0fac01b29112f41",
+    "semantic_hash": "e41fd24ace90f9ffb0fac01b29112f41"
+  },
+  "mali_kbase_config.h": {
+    "mtime": 1785064746.378,
+    "ast_hash": "caa0ab5bb33f27bffb1aef0388d9931e",
+    "semantic_hash": "caa0ab5bb33f27bffb1aef0388d9931e"
+  },
+  "mali_kbase_config_defaults.h": {
+    "mtime": 1785064746.382,
+    "ast_hash": "5df4553dabc48340fa099fabdff076b7",
+    "semantic_hash": "5df4553dabc48340fa099fabdff076b7"
+  },
+  "mali_kbase_core_linux.c": {
+    "mtime": 1785064746.386,
+    "ast_hash": "a0e0161c47d8549fccac73b0e61ce694",
+    "semantic_hash": "a0e0161c47d8549fccac73b0e61ce694"
+  },
+  "mali_kbase_cs_experimental.h": {
+    "mtime": 1785064746.394,
+    "ast_hash": "27df2efd147799f8a61bbd1601ab05f9",
+    "semantic_hash": "27df2efd147799f8a61bbd1601ab05f9"
+  },
+  "mali_kbase_ctx_sched.c": {
+    "mtime": 1785064746.395,
+    "ast_hash": "f49310d7a8ad33dd1e85386f9eb6d26b",
+    "semantic_hash": "f49310d7a8ad33dd1e85386f9eb6d26b"
+  },
+  "mali_kbase_ctx_sched.h": {
+    "mtime": 1785064746.396,
+    "ast_hash": "e2ff3c20b0436aa3b17c71c10ad5b17a",
+    "semantic_hash": "e2ff3c20b0436aa3b17c71c10ad5b17a"
+  },
+  "mali_kbase_debug.c": {
+    "mtime": 1785064746.397,
+    "ast_hash": "8c7830465c62b9e6de546c047ed954ee",
+    "semantic_hash": "8c7830465c62b9e6de546c047ed954ee"
+  },
+  "mali_kbase_debug.h": {
+    "mtime": 1785064746.397,
+    "ast_hash": "14f77e90e175289a7c216fff6e62f542",
+    "semantic_hash": "14f77e90e175289a7c216fff6e62f542"
+  },
+  "mali_kbase_debug_job_fault.c": {
+    "mtime": 1785064746.398,
+    "ast_hash": "6c7bbb495375bd62eb978ae75cf1bafb",
+    "semantic_hash": "6c7bbb495375bd62eb978ae75cf1bafb"
+  },
+  "mali_kbase_debug_job_fault.h": {
+    "mtime": 1785064746.399,
+    "ast_hash": "c1e92d17c689ba0d07662219a6b98fa4",
+    "semantic_hash": "c1e92d17c689ba0d07662219a6b98fa4"
+  },
+  "mali_kbase_debug_mem_view.c": {
+    "mtime": 1785064746.399,
+    "ast_hash": "0bc2e2779517c9331f78fcd36343e8ff",
+    "semantic_hash": "0bc2e2779517c9331f78fcd36343e8ff"
+  },
+  "mali_kbase_debug_mem_view.h": {
+    "mtime": 1785064746.4,
+    "ast_hash": "6ef52da0b37c905227e4524fb1a2f98f",
+    "semantic_hash": "6ef52da0b37c905227e4524fb1a2f98f"
+  },
+  "mali_kbase_debug_mem_zones.c": {
+    "mtime": 1785064746.4,
+    "ast_hash": "763617051f5a9bf666ef97c20e548366",
+    "semantic_hash": "763617051f5a9bf666ef97c20e548366"
+  },
+  "mali_kbase_debug_mem_zones.h": {
+    "mtime": 1785064746.401,
+    "ast_hash": "330dfef2cefca1d55e4841be27442892",
+    "semantic_hash": "330dfef2cefca1d55e4841be27442892"
+  },
+  "mali_kbase_debugfs_helper.c": {
+    "mtime": 1785064746.401,
+    "ast_hash": "27bfa769b05693feda6be8366d0193d3",
+    "semantic_hash": "27bfa769b05693feda6be8366d0193d3"
+  },
+  "mali_kbase_debugfs_helper.h": {
+    "mtime": 1785064746.402,
+    "ast_hash": "dcab35205267e7227e9c6facf2400d47",
+    "semantic_hash": "dcab35205267e7227e9c6facf2400d47"
+  },
+  "mali_kbase_defs.h": {
+    "mtime": 1785064746.403,
+    "ast_hash": "760729f95e3745d51dd11eb4ea68080e",
+    "semantic_hash": "760729f95e3745d51dd11eb4ea68080e"
+  },
+  "mali_kbase_disjoint_events.c": {
+    "mtime": 1785064746.409,
+    "ast_hash": "70e1d535e4c9ddd2c63fd417fbb11fcd",
+    "semantic_hash": "70e1d535e4c9ddd2c63fd417fbb11fcd"
+  },
+  "mali_kbase_dma_fence.c": {
+    "mtime": 1785064746.411,
+    "ast_hash": "2962830477044f812cba7cdc091a8dc5",
+    "semantic_hash": "2962830477044f812cba7cdc091a8dc5"
+  },
+  "mali_kbase_dma_fence.h": {
+    "mtime": 1785064746.412,
+    "ast_hash": "5417763dd60a43d7537ac532119d164d",
+    "semantic_hash": "5417763dd60a43d7537ac532119d164d"
+  },
+  "mali_kbase_dummy_job_wa.c": {
+    "mtime": 1785064746.413,
+    "ast_hash": "809c6611b82a7eab8cb8891b90e8d151",
+    "semantic_hash": "809c6611b82a7eab8cb8891b90e8d151"
+  },
+  "mali_kbase_dummy_job_wa.h": {
+    "mtime": 1785064746.414,
+    "ast_hash": "aedaba896bb86991522c659918029185",
+    "semantic_hash": "aedaba896bb86991522c659918029185"
+  },
+  "mali_kbase_dvfs_debugfs.c": {
+    "mtime": 1785064746.415,
+    "ast_hash": "233817ce78ddec2b72f4622bbb200cbd",
+    "semantic_hash": "233817ce78ddec2b72f4622bbb200cbd"
+  },
+  "mali_kbase_dvfs_debugfs.h": {
+    "mtime": 1785064746.415,
+    "ast_hash": "6aaf897794dda65e488e354abe28e253",
+    "semantic_hash": "6aaf897794dda65e488e354abe28e253"
+  },
+  "mali_kbase_event.c": {
+    "mtime": 1785064746.415,
+    "ast_hash": "2e7dc58fe00385015e553173397b636e",
+    "semantic_hash": "2e7dc58fe00385015e553173397b636e"
+  },
+  "mali_kbase_fence.c": {
+    "mtime": 1785064746.416,
+    "ast_hash": "13dd35813e2a40e76ddfdffa3a772316",
+    "semantic_hash": "13dd35813e2a40e76ddfdffa3a772316"
+  },
+  "mali_kbase_fence.h": {
+    "mtime": 1785064746.418,
+    "ast_hash": "7cfd0564caf0f14d3bad9fb001c2c4d7",
+    "semantic_hash": "7cfd0564caf0f14d3bad9fb001c2c4d7"
+  },
+  "mali_kbase_fence_defs.h": {
+    "mtime": 1785064746.419,
+    "ast_hash": "4eb56179ebbc17044b793260d0e1d4e8",
+    "semantic_hash": "4eb56179ebbc17044b793260d0e1d4e8"
+  },
+  "mali_kbase_fence_ops.c": {
+    "mtime": 1785064746.419,
+    "ast_hash": "51fe750c55963d2afe045960fb3d4c43",
+    "semantic_hash": "51fe750c55963d2afe045960fb3d4c43"
+  },
+  "mali_kbase_gator.h": {
+    "mtime": 1785064746.42,
+    "ast_hash": "e164a16d18600ff47f24f0235e3b8593",
+    "semantic_hash": "e164a16d18600ff47f24f0235e3b8593"
+  },
+  "mali_kbase_gpu_memory_debugfs.c": {
+    "mtime": 1785064746.42,
+    "ast_hash": "ec8c20f34e22a46c20ff48753b1bfe4e",
+    "semantic_hash": "ec8c20f34e22a46c20ff48753b1bfe4e"
+  },
+  "mali_kbase_gpu_memory_debugfs.h": {
+    "mtime": 1785064746.421,
+    "ast_hash": "a5a7f971b7aaa62ed495c3e8c4add61d",
+    "semantic_hash": "a5a7f971b7aaa62ed495c3e8c4add61d"
+  },
+  "mali_kbase_gpuprops.c": {
+    "mtime": 1785064746.422,
+    "ast_hash": "b72487bbc9655bb01c905595ee46a2e4",
+    "semantic_hash": "b72487bbc9655bb01c905595ee46a2e4"
+  },
+  "mali_kbase_gpuprops.h": {
+    "mtime": 1785064746.423,
+    "ast_hash": "e83d4d36098c72326bbe828a96cd8867",
+    "semantic_hash": "e83d4d36098c72326bbe828a96cd8867"
+  },
+  "mali_kbase_gpuprops_types.h": {
+    "mtime": 1785064746.424,
+    "ast_hash": "6e25ce577ce2de5b099a79859c9bf97a",
+    "semantic_hash": "6e25ce577ce2de5b099a79859c9bf97a"
+  },
+  "mali_kbase_gwt.c": {
+    "mtime": 1785064746.425,
+    "ast_hash": "841dc37b511f7aebd2b3c1a459b84aab",
+    "semantic_hash": "841dc37b511f7aebd2b3c1a459b84aab"
+  },
+  "mali_kbase_gwt.h": {
+    "mtime": 1785064746.425,
+    "ast_hash": "27ac25f88d53c1c564a60224a696f26c",
+    "semantic_hash": "27ac25f88d53c1c564a60224a696f26c"
+  },
+  "mali_kbase_hw.c": {
+    "mtime": 1785064746.426,
+    "ast_hash": "f431306aa67ac378ef606d5ca2a50975",
+    "semantic_hash": "f431306aa67ac378ef606d5ca2a50975"
+  },
+  "mali_kbase_hw.h": {
+    "mtime": 1785064746.426,
+    "ast_hash": "f124d58ba30a14e39ab05b6234248545",
+    "semantic_hash": "f124d58ba30a14e39ab05b6234248545"
+  },
+  "mali_kbase_hwaccess_backend.h": {
+    "mtime": 1785064746.427,
+    "ast_hash": "003ae4ad71f21ca450d155f21d483d7b",
+    "semantic_hash": "003ae4ad71f21ca450d155f21d483d7b"
+  },
+  "mali_kbase_hwaccess_defs.h": {
+    "mtime": 1785064746.427,
+    "ast_hash": "09c6a978e07689b5d1fdfd35fae45047",
+    "semantic_hash": "09c6a978e07689b5d1fdfd35fae45047"
+  },
+  "mali_kbase_hwaccess_gpuprops.h": {
+    "mtime": 1785064746.428,
+    "ast_hash": "56a4214ce4026d0802aff2a2a7a92241",
+    "semantic_hash": "56a4214ce4026d0802aff2a2a7a92241"
+  },
+  "mali_kbase_hwaccess_instr.h": {
+    "mtime": 1785064746.428,
+    "ast_hash": "64e2900ad28940ced90a85857f5f4392",
+    "semantic_hash": "64e2900ad28940ced90a85857f5f4392"
+  },
+  "mali_kbase_hwaccess_jm.h": {
+    "mtime": 1785064746.429,
+    "ast_hash": "90da4284e4f289a477a06494d3e97c24",
+    "semantic_hash": "90da4284e4f289a477a06494d3e97c24"
+  },
+  "mali_kbase_hwaccess_pm.h": {
+    "mtime": 1785064746.429,
+    "ast_hash": "5c75d7096e45d68133ba96117c3e36df",
+    "semantic_hash": "5c75d7096e45d68133ba96117c3e36df"
+  },
+  "mali_kbase_hwaccess_time.h": {
+    "mtime": 1785064746.43,
+    "ast_hash": "18645ffaec9bba7427218c00431b606f",
+    "semantic_hash": "18645ffaec9bba7427218c00431b606f"
+  },
+  "mali_kbase_hwcnt.c": {
+    "mtime": 1785064746.431,
+    "ast_hash": "fe4b7a707c0f894018e48d014e51f124",
+    "semantic_hash": "fe4b7a707c0f894018e48d014e51f124"
+  },
+  "mali_kbase_hwcnt_accumulator.h": {
+    "mtime": 1785064746.432,
+    "ast_hash": "72e628fdcfba56b48b60a2eb05558a0e",
+    "semantic_hash": "72e628fdcfba56b48b60a2eb05558a0e"
+  },
+  "mali_kbase_hwcnt_backend.h": {
+    "mtime": 1785064746.432,
+    "ast_hash": "c3161e5ddfc56a9b1c9225b1193af277",
+    "semantic_hash": "c3161e5ddfc56a9b1c9225b1193af277"
+  },
+  "mali_kbase_hwcnt_backend_csf.c": {
+    "mtime": 1785064746.433,
+    "ast_hash": "5f5f16003cb69b071ba1597b2581644f",
+    "semantic_hash": "5f5f16003cb69b071ba1597b2581644f"
+  },
+  "mali_kbase_hwcnt_backend_csf.h": {
+    "mtime": 1785064746.437,
+    "ast_hash": "6b9ba0416eaedd1ed6749f8bdaba9d56",
+    "semantic_hash": "6b9ba0416eaedd1ed6749f8bdaba9d56"
+  },
+  "mali_kbase_hwcnt_backend_csf_if.h": {
+    "mtime": 1785064746.438,
+    "ast_hash": "5ad7ee3987472d3dcb6c02254ef773d9",
+    "semantic_hash": "5ad7ee3987472d3dcb6c02254ef773d9"
+  },
+  "mali_kbase_hwcnt_backend_csf_if_fw.c": {
+    "mtime": 1785064746.439,
+    "ast_hash": "f7078903ce251a1352326726eec73129",
+    "semantic_hash": "f7078903ce251a1352326726eec73129"
+  },
+  "mali_kbase_hwcnt_backend_csf_if_fw.h": {
+    "mtime": 1785064746.44,
+    "ast_hash": "5040e7649c4fd5957c15350206fbf199",
+    "semantic_hash": "5040e7649c4fd5957c15350206fbf199"
+  },
+  "mali_kbase_hwcnt_backend_jm.c": {
+    "mtime": 1785064746.446,
+    "ast_hash": "138ce451dfc6ba679dfdaea216729654",
+    "semantic_hash": "138ce451dfc6ba679dfdaea216729654"
+  },
+  "mali_kbase_hwcnt_backend_jm.h": {
+    "mtime": 1785064746.448,
+    "ast_hash": "570ad26a03c57fe8929bfc26d54499b6",
+    "semantic_hash": "570ad26a03c57fe8929bfc26d54499b6"
+  },
+  "mali_kbase_hwcnt_backend_jm_watchdog.c": {
+    "mtime": 1785064746.449,
+    "ast_hash": "56542f63c2268b01a3156b6b930d289b",
+    "semantic_hash": "56542f63c2268b01a3156b6b930d289b"
+  },
+  "mali_kbase_hwcnt_backend_jm_watchdog.h": {
+    "mtime": 1785064746.45,
+    "ast_hash": "29d5e42a02c335b7c0e2e3eb9838c73f",
+    "semantic_hash": "29d5e42a02c335b7c0e2e3eb9838c73f"
+  },
+  "mali_kbase_hwcnt_context.h": {
+    "mtime": 1785064746.451,
+    "ast_hash": "b520b4bca70711b109a54be5ae9b20b3",
+    "semantic_hash": "b520b4bca70711b109a54be5ae9b20b3"
+  },
+  "mali_kbase_hwcnt_gpu.c": {
+    "mtime": 1785064746.451,
+    "ast_hash": "9885d6a3940f3f62df2eef8997c200c3",
+    "semantic_hash": "9885d6a3940f3f62df2eef8997c200c3"
+  },
+  "mali_kbase_hwcnt_gpu.h": {
+    "mtime": 1785064746.453,
+    "ast_hash": "a22eee1f2af6d420c20a9a738851da82",
+    "semantic_hash": "a22eee1f2af6d420c20a9a738851da82"
+  },
+  "mali_kbase_hwcnt_gpu_narrow.c": {
+    "mtime": 1785064746.453,
+    "ast_hash": "40be4842548f93bf004b9b6ac7cfaddc",
+    "semantic_hash": "40be4842548f93bf004b9b6ac7cfaddc"
+  },
+  "mali_kbase_hwcnt_gpu_narrow.h": {
+    "mtime": 1785064746.454,
+    "ast_hash": "ed092d9cb16627d71ebe5fbc698c4c3d",
+    "semantic_hash": "ed092d9cb16627d71ebe5fbc698c4c3d"
+  },
+  "mali_kbase_hwcnt_types.c": {
+    "mtime": 1785064746.454,
+    "ast_hash": "64d838f13c27eeda2b49e7da5abd4d49",
+    "semantic_hash": "64d838f13c27eeda2b49e7da5abd4d49"
+  },
+  "mali_kbase_hwcnt_types.h": {
+    "mtime": 1785064746.455,
+    "ast_hash": "9253ea305084843913fae2f59b737666",
+    "semantic_hash": "9253ea305084843913fae2f59b737666"
+  },
+  "mali_kbase_hwcnt_virtualizer.c": {
+    "mtime": 1785064746.457,
+    "ast_hash": "22e131b4db8792c15ddd59a022496d7d",
+    "semantic_hash": "22e131b4db8792c15ddd59a022496d7d"
+  },
+  "mali_kbase_hwcnt_virtualizer.h": {
+    "mtime": 1785064746.458,
+    "ast_hash": "d769302b930ce3b292073ad8ca7eaced",
+    "semantic_hash": "d769302b930ce3b292073ad8ca7eaced"
+  },
+  "mali_kbase_hwcnt_watchdog_if.h": {
+    "mtime": 1785064746.458,
+    "ast_hash": "0a6e39876a18f247cd36323b56fb645f",
+    "semantic_hash": "0a6e39876a18f247cd36323b56fb645f"
+  },
+  "mali_kbase_hwcnt_watchdog_if_timer.c": {
+    "mtime": 1785064746.459,
+    "ast_hash": "ed2a85b64ab08b6472611daa00fdd7ff",
+    "semantic_hash": "ed2a85b64ab08b6472611daa00fdd7ff"
+  },
+  "mali_kbase_hwcnt_watchdog_if_timer.h": {
+    "mtime": 1785064746.459,
+    "ast_hash": "90d945550e1fe025f2030206f9f73324",
+    "semantic_hash": "90d945550e1fe025f2030206f9f73324"
+  },
+  "mali_kbase_jd.c": {
+    "mtime": 1785064746.46,
+    "ast_hash": "f578faf32e22e783d886a3469568ebc5",
+    "semantic_hash": "f578faf32e22e783d886a3469568ebc5"
+  },
+  "mali_kbase_jd_debugfs.c": {
+    "mtime": 1785064746.463,
+    "ast_hash": "3dc88853b6a2ef1497b5a5298592ca98",
+    "semantic_hash": "3dc88853b6a2ef1497b5a5298592ca98"
+  },
+  "mali_kbase_jd_debugfs.h": {
+    "mtime": 1785064746.463,
+    "ast_hash": "cd3e7b724a9ce1703ea3279144307796",
+    "semantic_hash": "cd3e7b724a9ce1703ea3279144307796"
+  },
+  "mali_kbase_jm.c": {
+    "mtime": 1785064746.463,
+    "ast_hash": "158f47731615f29d6188e150587ba823",
+    "semantic_hash": "158f47731615f29d6188e150587ba823"
+  },
+  "mali_kbase_jm.h": {
+    "mtime": 1785064746.464,
+    "ast_hash": "2be8ee24b3a8bbd873c171a4d5189bf0",
+    "semantic_hash": "2be8ee24b3a8bbd873c171a4d5189bf0"
+  },
+  "mali_kbase_js.c": {
+    "mtime": 1785064746.467,
+    "ast_hash": "3af3df0f8e930ad2d857a32c26955e72",
+    "semantic_hash": "3af3df0f8e930ad2d857a32c26955e72"
+  },
+  "mali_kbase_js.h": {
+    "mtime": 1785064746.497,
+    "ast_hash": "f4cacada43869c1c3d7005f742be2df7",
+    "semantic_hash": "f4cacada43869c1c3d7005f742be2df7"
+  },
+  "mali_kbase_js_ctx_attr.c": {
+    "mtime": 1785064746.498,
+    "ast_hash": "8fa9224921ed12bcda97ddb9160ff786",
+    "semantic_hash": "8fa9224921ed12bcda97ddb9160ff786"
+  },
+  "mali_kbase_js_ctx_attr.h": {
+    "mtime": 1785064746.499,
+    "ast_hash": "c0ae8d4a336ff8272283ed5dc691b367",
+    "semantic_hash": "c0ae8d4a336ff8272283ed5dc691b367"
+  },
+  "mali_kbase_kinstr_jm.c": {
+    "mtime": 1785064746.499,
+    "ast_hash": "968926fd042428b2bc18cb5de56d8b0b",
+    "semantic_hash": "968926fd042428b2bc18cb5de56d8b0b"
+  },
+  "mali_kbase_kinstr_jm.h": {
+    "mtime": 1785064746.501,
+    "ast_hash": "6fe5ea2996e882c9f5750455e4a74bc6",
+    "semantic_hash": "6fe5ea2996e882c9f5750455e4a74bc6"
+  },
+  "mali_kbase_kinstr_prfcnt.c": {
+    "mtime": 1785064746.507,
+    "ast_hash": "2d1fd7eceea539e10245370961330976",
+    "semantic_hash": "2d1fd7eceea539e10245370961330976"
+  },
+  "mali_kbase_kinstr_prfcnt.h": {
+    "mtime": 1785064746.512,
+    "ast_hash": "20e7ba3b272b7ebe20df33bb7a2d0687",
+    "semantic_hash": "20e7ba3b272b7ebe20df33bb7a2d0687"
+  },
+  "mali_kbase_linux.h": {
+    "mtime": 1785064746.512,
+    "ast_hash": "6a07a03c16976daffe9b7e8e68b7b9c9",
+    "semantic_hash": "6a07a03c16976daffe9b7e8e68b7b9c9"
+  },
+  "mali_kbase_mem.c": {
+    "mtime": 1785064746.516,
+    "ast_hash": "8d05c4d88f8e0a3c2dbe406e01b7c8f5",
+    "semantic_hash": "8d05c4d88f8e0a3c2dbe406e01b7c8f5"
+  },
+  "mali_kbase_mem.h": {
+    "mtime": 1785064746.528,
+    "ast_hash": "47b5b4c9a3427fa3b3d84ddf6cf7561d",
+    "semantic_hash": "47b5b4c9a3427fa3b3d84ddf6cf7561d"
+  },
+  "mali_kbase_mem_linux.c": {
+    "mtime": 1785064746.535,
+    "ast_hash": "7c64308645c69fe56b183671648dbf2e",
+    "semantic_hash": "7c64308645c69fe56b183671648dbf2e"
+  },
+  "mali_kbase_mem_linux.h": {
+    "mtime": 1785064746.541,
+    "ast_hash": "aec4d11305bb6e199ce5a70bbe5fc692",
+    "semantic_hash": "aec4d11305bb6e199ce5a70bbe5fc692"
+  },
+  "mali_kbase_mem_lowlevel.h": {
+    "mtime": 1785064746.543,
+    "ast_hash": "35fcb2bdc7d82952a245d3e595f7f92a",
+    "semantic_hash": "35fcb2bdc7d82952a245d3e595f7f92a"
+  },
+  "mali_kbase_mem_pool.c": {
+    "mtime": 1785064746.544,
+    "ast_hash": "1149cde71fbf8335285c9cbc4eeb3b83",
+    "semantic_hash": "1149cde71fbf8335285c9cbc4eeb3b83"
+  },
+  "mali_kbase_mem_pool_debugfs.c": {
+    "mtime": 1785064746.546,
+    "ast_hash": "964974333ea2bd2cfe7c46ea5c2ab73a",
+    "semantic_hash": "964974333ea2bd2cfe7c46ea5c2ab73a"
+  },
+  "mali_kbase_mem_pool_debugfs.h": {
+    "mtime": 1785064746.546,
+    "ast_hash": "db725da83270eb913ee5a1f547b7392f",
+    "semantic_hash": "db725da83270eb913ee5a1f547b7392f"
+  },
+  "mali_kbase_mem_pool_group.c": {
+    "mtime": 1785064746.547,
+    "ast_hash": "2565d8464d12d0e8a77f93265096e96d",
+    "semantic_hash": "2565d8464d12d0e8a77f93265096e96d"
+  },
+  "mali_kbase_mem_pool_group.h": {
+    "mtime": 1785064746.547,
+    "ast_hash": "56bbf330b7ad3f8f0f2f7dae5c55dae9",
+    "semantic_hash": "56bbf330b7ad3f8f0f2f7dae5c55dae9"
+  },
+  "mali_kbase_mem_profile_debugfs.c": {
+    "mtime": 1785064746.547,
+    "ast_hash": "9e6481660db92fcb11b48f6e13a2d767",
+    "semantic_hash": "9e6481660db92fcb11b48f6e13a2d767"
+  },
+  "mali_kbase_mem_profile_debugfs.h": {
+    "mtime": 1785064746.548,
+    "ast_hash": "eb9a7423a3219d7e87100a708ce02501",
+    "semantic_hash": "eb9a7423a3219d7e87100a708ce02501"
+  },
+  "mali_kbase_mem_profile_debugfs_buf_size.h": {
+    "mtime": 1785064746.55,
+    "ast_hash": "f4bd02af1e08c2418552f0aab9413ec0",
+    "semantic_hash": "f4bd02af1e08c2418552f0aab9413ec0"
+  },
+  "mali_kbase_mipe_gen_header.h": {
+    "mtime": 1785064746.551,
+    "ast_hash": "14e88a10ff9b62c8a8e78b509090e2a1",
+    "semantic_hash": "14e88a10ff9b62c8a8e78b509090e2a1"
+  },
+  "mali_kbase_mipe_proto.h": {
+    "mtime": 1785064746.551,
+    "ast_hash": "a5c5be200e5a549b73fb9d036cde514a",
+    "semantic_hash": "a5c5be200e5a549b73fb9d036cde514a"
+  },
+  "mali_kbase_native_mgm.c": {
+    "mtime": 1785064746.552,
+    "ast_hash": "703a0f4cf550aa54ef8857ba40065730",
+    "semantic_hash": "703a0f4cf550aa54ef8857ba40065730"
+  },
+  "mali_kbase_native_mgm.h": {
+    "mtime": 1785064746.552,
+    "ast_hash": "236a085030b0f3a8b081a32614c16d35",
+    "semantic_hash": "236a085030b0f3a8b081a32614c16d35"
+  },
+  "mali_kbase_pbha.c": {
+    "mtime": 1785064746.553,
+    "ast_hash": "04a43e7b0aad1245ac0a42fa4a2db679",
+    "semantic_hash": "04a43e7b0aad1245ac0a42fa4a2db679"
+  },
+  "mali_kbase_pbha.h": {
+    "mtime": 1785064746.553,
+    "ast_hash": "f52733ac1c0585ffc85a1e0d5d4f43f2",
+    "semantic_hash": "f52733ac1c0585ffc85a1e0d5d4f43f2"
+  },
+  "mali_kbase_pbha_debugfs.c": {
+    "mtime": 1785064746.553,
+    "ast_hash": "556e4f098d48135b1aac86d3d753ff50",
+    "semantic_hash": "556e4f098d48135b1aac86d3d753ff50"
+  },
+  "mali_kbase_pbha_debugfs.h": {
+    "mtime": 1785064746.554,
+    "ast_hash": "091b81fce585a90c5833578d522803a7",
+    "semantic_hash": "091b81fce585a90c5833578d522803a7"
+  },
+  "mali_kbase_platform_fake.c": {
+    "mtime": 1785064746.554,
+    "ast_hash": "dc449b8989ea0fb1503f916d8a7a40e9",
+    "semantic_hash": "dc449b8989ea0fb1503f916d8a7a40e9"
+  },
+  "mali_kbase_pm.c": {
+    "mtime": 1785064746.554,
+    "ast_hash": "3368e34d0f56f80e6213284a8d62b763",
+    "semantic_hash": "3368e34d0f56f80e6213284a8d62b763"
+  },
+  "mali_kbase_pm.h": {
+    "mtime": 1785064746.555,
+    "ast_hash": "7bf8d2ef17acf3cf60143201e7444d9f",
+    "semantic_hash": "7bf8d2ef17acf3cf60143201e7444d9f"
+  },
+  "mali_kbase_regs_history_debugfs.c": {
+    "mtime": 1785064746.556,
+    "ast_hash": "1e15345c458ac218c010be98890f67c4",
+    "semantic_hash": "1e15345c458ac218c010be98890f67c4"
+  },
+  "mali_kbase_regs_history_debugfs.h": {
+    "mtime": 1785064746.557,
+    "ast_hash": "ab0745c81524150eab4d7120d3fb546b",
+    "semantic_hash": "ab0745c81524150eab4d7120d3fb546b"
+  },
+  "mali_kbase_reset_gpu.h": {
+    "mtime": 1785064746.557,
+    "ast_hash": "d00575f50431b34c3a0980f6216b4fca",
+    "semantic_hash": "d00575f50431b34c3a0980f6216b4fca"
+  },
+  "mali_kbase_smc.c": {
+    "mtime": 1785064746.558,
+    "ast_hash": "fb77bf691f73399f6837883109ff75b2",
+    "semantic_hash": "fb77bf691f73399f6837883109ff75b2"
+  },
+  "mali_kbase_smc.h": {
+    "mtime": 1785064746.558,
+    "ast_hash": "7db42f39c5830128fbdabcc195f24f7f",
+    "semantic_hash": "7db42f39c5830128fbdabcc195f24f7f"
+  },
+  "mali_kbase_softjobs.c": {
+    "mtime": 1785064746.559,
+    "ast_hash": "7d316140baafda403bd12f6c63e5d18f",
+    "semantic_hash": "7d316140baafda403bd12f6c63e5d18f"
+  },
+  "mali_kbase_strings.c": {
+    "mtime": 1785064746.562,
+    "ast_hash": "b0236eda0405156f967a4c427165a5ce",
+    "semantic_hash": "b0236eda0405156f967a4c427165a5ce"
+  },
+  "mali_kbase_strings.h": {
+    "mtime": 1785064746.562,
+    "ast_hash": "c90c435192e17f260755a9bcfa7cd810",
+    "semantic_hash": "c90c435192e17f260755a9bcfa7cd810"
+  },
+  "mali_kbase_sync.h": {
+    "mtime": 1785064746.563,
+    "ast_hash": "149b24a7b1882fcb77843bfcd968938a",
+    "semantic_hash": "149b24a7b1882fcb77843bfcd968938a"
+  },
+  "mali_kbase_sync_android.c": {
+    "mtime": 1785064746.563,
+    "ast_hash": "4e820e7864e3772eda6a4a4cecdd9f7b",
+    "semantic_hash": "4e820e7864e3772eda6a4a4cecdd9f7b"
+  },
+  "mali_kbase_sync_common.c": {
+    "mtime": 1785064746.564,
+    "ast_hash": "c19b0c490e00456b6ed82c6058346e88",
+    "semantic_hash": "c19b0c490e00456b6ed82c6058346e88"
+  },
+  "mali_kbase_sync_file.c": {
+    "mtime": 1785064746.564,
+    "ast_hash": "e4bbf43df20d6c11a486ee19142fca91",
+    "semantic_hash": "e4bbf43df20d6c11a486ee19142fca91"
+  },
+  "mali_kbase_trace_gpu_mem.c": {
+    "mtime": 1785064746.565,
+    "ast_hash": "b2000140f6735ca7ed8928c2764f078a",
+    "semantic_hash": "b2000140f6735ca7ed8928c2764f078a"
+  },
+  "mali_kbase_trace_gpu_mem.h": {
+    "mtime": 1785064746.565,
+    "ast_hash": "a7bd33edc4daca07683fe6a580597549",
+    "semantic_hash": "a7bd33edc4daca07683fe6a580597549"
+  },
+  "mali_kbase_utility.h": {
+    "mtime": 1785064746.566,
+    "ast_hash": "e9c523e810a936551be154c4d1cc5bbd",
+    "semantic_hash": "e9c523e810a936551be154c4d1cc5bbd"
+  },
+  "mali_kbase_vinstr.c": {
+    "mtime": 1785064746.566,
+    "ast_hash": "8fd54ef5bc5deb68e49ebe25d63f41e0",
+    "semantic_hash": "8fd54ef5bc5deb68e49ebe25d63f41e0"
+  },
+  "mali_kbase_vinstr.h": {
+    "mtime": 1785064746.568,
+    "ast_hash": "429484034342bd2b23c6edf04748d5ed",
+    "semantic_hash": "429484034342bd2b23c6edf04748d5ed"
+  },
+  "mali_linux_trace.h": {
+    "mtime": 1785064746.569,
+    "ast_hash": "84aa4fbcfba8d70a1a5d7ca6eb9a6d21",
+    "semantic_hash": "84aa4fbcfba8d70a1a5d7ca6eb9a6d21"
+  },
+  "mali_malisw.h": {
+    "mtime": 1785064746.57,
+    "ast_hash": "cabc7c2aff4fa3575d3e861557bd8337",
+    "semantic_hash": "cabc7c2aff4fa3575d3e861557bd8337"
+  },
+  "mali_power_gpu_frequency_trace.c": {
+    "mtime": 1785064746.57,
+    "ast_hash": "bb8e7436c7b26b9edf8b978959238274",
+    "semantic_hash": "bb8e7436c7b26b9edf8b978959238274"
+  },
+  "mali_power_gpu_frequency_trace.h": {
+    "mtime": 1785064746.571,
+    "ast_hash": "48c5c44d2284f4ad429422071f79c1b2",
+    "semantic_hash": "48c5c44d2284f4ad429422071f79c1b2"
+  },
+  "mmu/backend/mali_kbase_mmu_csf.c": {
+    "mtime": 1785064746.573,
+    "ast_hash": "a7a11ff9d356877f06090f647bf3c0c7",
+    "semantic_hash": "a7a11ff9d356877f06090f647bf3c0c7"
+  },
+  "mmu/backend/mali_kbase_mmu_jm.c": {
+    "mtime": 1785064746.575,
+    "ast_hash": "9cf545f5bfc30e1662dad26acf61b5de",
+    "semantic_hash": "9cf545f5bfc30e1662dad26acf61b5de"
+  },
+  "mmu/mali_kbase_mmu.c": {
+    "mtime": 1785064746.579,
+    "ast_hash": "038130b6ca715dd491e8438580da3058",
+    "semantic_hash": "038130b6ca715dd491e8438580da3058"
+  },
+  "mmu/mali_kbase_mmu.h": {
+    "mtime": 1785064746.584,
+    "ast_hash": "56288e5b82a6bd71b19ac35836feaeef",
+    "semantic_hash": "56288e5b82a6bd71b19ac35836feaeef"
+  },
+  "mmu/mali_kbase_mmu_hw.h": {
+    "mtime": 1785064746.585,
+    "ast_hash": "dffa47377ca16838186605fc9bb2202c",
+    "semantic_hash": "dffa47377ca16838186605fc9bb2202c"
+  },
+  "mmu/mali_kbase_mmu_hw_direct.c": {
+    "mtime": 1785064746.589,
+    "ast_hash": "0e8f46650d83a12b0504b63efd6b35ea",
+    "semantic_hash": "0e8f46650d83a12b0504b63efd6b35ea"
+  },
+  "mmu/mali_kbase_mmu_internal.h": {
+    "mtime": 1785064746.592,
+    "ast_hash": "f51bb3986ae84a98b6a682f024756cce",
+    "semantic_hash": "f51bb3986ae84a98b6a682f024756cce"
+  },
+  "mmu/mali_kbase_mmu_mode_aarch64.c": {
+    "mtime": 1785064746.593,
+    "ast_hash": "5267dd9fe15dda0e7ca23ac52a456d8d",
+    "semantic_hash": "5267dd9fe15dda0e7ca23ac52a456d8d"
+  },
+  "platform/devicetree/mali_kbase_clk_rate_trace.c": {
+    "mtime": 1785064746.594,
+    "ast_hash": "c7be09eb28467bac4bd1a5a07bd7a216",
+    "semantic_hash": "c7be09eb28467bac4bd1a5a07bd7a216"
+  },
+  "platform/devicetree/mali_kbase_config_devicetree.c": {
+    "mtime": 1785064746.595,
+    "ast_hash": "7185a3780ef930105ccdad9d232b0801",
+    "semantic_hash": "7185a3780ef930105ccdad9d232b0801"
+  },
+  "platform/devicetree/mali_kbase_config_platform.c": {
+    "mtime": 1785064746.595,
+    "ast_hash": "902dca16c680ae1776e780f87787b7cf",
+    "semantic_hash": "902dca16c680ae1776e780f87787b7cf"
+  },
+  "platform/devicetree/mali_kbase_config_platform.h": {
+    "mtime": 1785064746.596,
+    "ast_hash": "30836c09b67dc770a0df098eb503e130",
+    "semantic_hash": "30836c09b67dc770a0df098eb503e130"
+  },
+  "platform/devicetree/mali_kbase_runtime_pm.c": {
+    "mtime": 1785064746.596,
+    "ast_hash": "cde8aad7195e3c3601530a0aa0d8b9e8",
+    "semantic_hash": "cde8aad7195e3c3601530a0aa0d8b9e8"
+  },
+  "platform/meson/mali_kbase_config_meson.c": {
+    "mtime": 1785064746.597,
+    "ast_hash": "dabbb0b9607d6143c359c013be253f98",
+    "semantic_hash": "dabbb0b9607d6143c359c013be253f98"
+  },
+  "platform/meson/mali_kbase_config_platform.h": {
+    "mtime": 1785064746.597,
+    "ast_hash": "3fec54ec17406ffe9b81f8a786b1de6c",
+    "semantic_hash": "3fec54ec17406ffe9b81f8a786b1de6c"
+  },
+  "platform/meson/mali_kbase_runtime_pm.c": {
+    "mtime": 1785064746.597,
+    "ast_hash": "c2847a7a464b95959e777bbfcf284699",
+    "semantic_hash": "c2847a7a464b95959e777bbfcf284699"
+  },
+  "platform/pixel/mali_kbase_config_platform.h": {
+    "mtime": 1785064746.599,
+    "ast_hash": "73dc9fa75cdcd53b5f0a7a8ef8461710",
+    "semantic_hash": "73dc9fa75cdcd53b5f0a7a8ef8461710"
+  },
+  "platform/pixel/pixel_gpu.c": {
+    "mtime": 1785064746.6,
+    "ast_hash": "d095cebfd93431514cbd34fe78e9bc8e",
+    "semantic_hash": "d095cebfd93431514cbd34fe78e9bc8e"
+  },
+  "platform/pixel/pixel_gpu_control.h": {
+    "mtime": 1785064746.6,
+    "ast_hash": "b5e72322ff0c34cc8426a02cee3cac9c",
+    "semantic_hash": "b5e72322ff0c34cc8426a02cee3cac9c"
+  },
+  "platform/pixel/pixel_gpu_debug.c": {
+    "mtime": 1785064746.6,
+    "ast_hash": "227b1bca90e64855d6b25373079ee81a",
+    "semantic_hash": "227b1bca90e64855d6b25373079ee81a"
+  },
+  "platform/pixel/pixel_gpu_debug.h": {
+    "mtime": 1785064746.601,
+    "ast_hash": "6cfd0c54ef38d7bf34303ce10827147f",
+    "semantic_hash": "6cfd0c54ef38d7bf34303ce10827147f"
+  },
+  "platform/pixel/pixel_gpu_dvfs.c": {
+    "mtime": 1785064746.602,
+    "ast_hash": "9f1698e48d731c8ed40472e6bac41be0",
+    "semantic_hash": "9f1698e48d731c8ed40472e6bac41be0"
+  },
+  "platform/pixel/pixel_gpu_dvfs.h": {
+    "mtime": 1785064746.603,
+    "ast_hash": "c8ea74e1166e94d4efc8159dab77dc3c",
+    "semantic_hash": "c8ea74e1166e94d4efc8159dab77dc3c"
+  },
+  "platform/pixel/pixel_gpu_dvfs_governor.c": {
+    "mtime": 1785064746.605,
+    "ast_hash": "178b4908fe3c4758d6f0f2a21a1c7f17",
+    "semantic_hash": "178b4908fe3c4758d6f0f2a21a1c7f17"
+  },
+  "platform/pixel/pixel_gpu_dvfs_metrics.c": {
+    "mtime": 1785064746.606,
+    "ast_hash": "694efbf5220ab400b69a9dbdc33802aa",
+    "semantic_hash": "694efbf5220ab400b69a9dbdc33802aa"
+  },
+  "platform/pixel/pixel_gpu_dvfs_qos.c": {
+    "mtime": 1785064746.609,
+    "ast_hash": "d83ec95fd6555a66b41af072d8a2c07e",
+    "semantic_hash": "d83ec95fd6555a66b41af072d8a2c07e"
+  },
+  "platform/pixel/pixel_gpu_power.c": {
+    "mtime": 1785064746.61,
+    "ast_hash": "2065856f19b2a1da82b1a1a952f8ae79",
+    "semantic_hash": "2065856f19b2a1da82b1a1a952f8ae79"
+  },
+  "platform/pixel/pixel_gpu_sscd.c": {
+    "mtime": 1785064746.612,
+    "ast_hash": "fbc5f1e1ba596025d8e0d25e49062b88",
+    "semantic_hash": "fbc5f1e1ba596025d8e0d25e49062b88"
+  },
+  "platform/pixel/pixel_gpu_sscd.h": {
+    "mtime": 1785064746.613,
+    "ast_hash": "442253c71bc15abc1cc5bccec0c7f45b",
+    "semantic_hash": "442253c71bc15abc1cc5bccec0c7f45b"
+  },
+  "platform/pixel/pixel_gpu_sysfs.c": {
+    "mtime": 1785064746.613,
+    "ast_hash": "43b89ab6d4fe030964ecbe0ec3ff69ac",
+    "semantic_hash": "43b89ab6d4fe030964ecbe0ec3ff69ac"
+  },
+  "platform/pixel/pixel_gpu_tmu.c": {
+    "mtime": 1785064746.614,
+    "ast_hash": "23d260cec4964b9046e513112ab31b9c",
+    "semantic_hash": "23d260cec4964b9046e513112ab31b9c"
+  },
+  "platform/pixel/pixel_gpu_trace.h": {
+    "mtime": 1785064746.616,
+    "ast_hash": "9dabd6153bfb5d69b41236bd08fa0497",
+    "semantic_hash": "9dabd6153bfb5d69b41236bd08fa0497"
+  },
+  "platform/vexpress/mali_kbase_config_platform.h": {
+    "mtime": 1785064746.616,
+    "ast_hash": "f7483fa9553fd2fa03c5255a3aefb34a",
+    "semantic_hash": "f7483fa9553fd2fa03c5255a3aefb34a"
+  },
+  "platform/vexpress/mali_kbase_config_vexpress.c": {
+    "mtime": 1785064746.617,
+    "ast_hash": "a3f1769cc7a39a913c75a3d0c78fee9c",
+    "semantic_hash": "a3f1769cc7a39a913c75a3d0c78fee9c"
+  },
+  "platform/vexpress_1xv7_a57/mali_kbase_config_platform.h": {
+    "mtime": 1785064746.617,
+    "ast_hash": "f7483fa9553fd2fa03c5255a3aefb34a",
+    "semantic_hash": "f7483fa9553fd2fa03c5255a3aefb34a"
+  },
+  "platform/vexpress_1xv7_a57/mali_kbase_config_vexpress.c": {
+    "mtime": 1785064746.618,
+    "ast_hash": "c6260f98f29c7d8b3573a91d210be951",
+    "semantic_hash": "c6260f98f29c7d8b3573a91d210be951"
+  },
+  "platform/vexpress_6xvirtex7_10mhz/mali_kbase_config_platform.h": {
+    "mtime": 1785064746.618,
+    "ast_hash": "f7483fa9553fd2fa03c5255a3aefb34a",
+    "semantic_hash": "f7483fa9553fd2fa03c5255a3aefb34a"
+  },
+  "platform/vexpress_6xvirtex7_10mhz/mali_kbase_config_vexpress.c": {
+    "mtime": 1785064746.619,
+    "ast_hash": "8e203c74b766493ee8a67407f7ceb862",
+    "semantic_hash": "8e203c74b766493ee8a67407f7ceb862"
+  },
+  "protected_mode_switcher.h": {
+    "mtime": 1785064746.619,
+    "ast_hash": "6d916e52086b70d2e357920ae968e5e7",
+    "semantic_hash": "6d916e52086b70d2e357920ae968e5e7"
+  },
+  "tests/include/kutf/kutf_helpers.h": {
+    "mtime": 1785064746.623,
+    "ast_hash": "05160e19c961af19dea10ecb6f4f9de6",
+    "semantic_hash": "05160e19c961af19dea10ecb6f4f9de6"
+  },
+  "tests/include/kutf/kutf_helpers_user.h": {
+    "mtime": 1785064746.623,
+    "ast_hash": "72facc2eac76ac970d2db43913e1d9c3",
+    "semantic_hash": "72facc2eac76ac970d2db43913e1d9c3"
+  },
+  "tests/include/kutf/kutf_mem.h": {
+    "mtime": 1785064746.624,
+    "ast_hash": "1f0f76076c357eb2efeaa6891177f42e",
+    "semantic_hash": "1f0f76076c357eb2efeaa6891177f42e"
+  },
+  "tests/include/kutf/kutf_resultset.h": {
+    "mtime": 1785064746.624,
+    "ast_hash": "e6f9836bb5f98ab5b5d36f34c13b7e3d",
+    "semantic_hash": "e6f9836bb5f98ab5b5d36f34c13b7e3d"
+  },
+  "tests/include/kutf/kutf_suite.h": {
+    "mtime": 1785064746.624,
+    "ast_hash": "4de60b57a0788eb2167cbd06841dae7d",
+    "semantic_hash": "4de60b57a0788eb2167cbd06841dae7d"
+  },
+  "tests/include/kutf/kutf_utils.h": {
+    "mtime": 1785064746.626,
+    "ast_hash": "c0bfd7228c4a18834c2295251025f2c7",
+    "semantic_hash": "c0bfd7228c4a18834c2295251025f2c7"
+  },
+  "tests/kutf/kutf_helpers.c": {
+    "mtime": 1785064746.629,
+    "ast_hash": "c58957234e8ea4f00cde302955b475e1",
+    "semantic_hash": "c58957234e8ea4f00cde302955b475e1"
+  },
+  "tests/kutf/kutf_helpers_user.c": {
+    "mtime": 1785064746.63,
+    "ast_hash": "04243fcb0cefc9737c13749d0c441212",
+    "semantic_hash": "04243fcb0cefc9737c13749d0c441212"
+  },
+  "tests/kutf/kutf_mem.c": {
+    "mtime": 1785064746.631,
+    "ast_hash": "6e41c8decf96019fa7d366111e7ffadf",
+    "semantic_hash": "6e41c8decf96019fa7d366111e7ffadf"
+  },
+  "tests/kutf/kutf_resultset.c": {
+    "mtime": 1785064746.631,
+    "ast_hash": "f9879fd2cc74712113f5d625152d45b9",
+    "semantic_hash": "f9879fd2cc74712113f5d625152d45b9"
+  },
+  "tests/kutf/kutf_suite.c": {
+    "mtime": 1785064746.632,
+    "ast_hash": "eb22bc63339cda92727f9d3ed5bb9ca9",
+    "semantic_hash": "eb22bc63339cda92727f9d3ed5bb9ca9"
+  },
+  "tests/kutf/kutf_utils.c": {
+    "mtime": 1785064746.634,
+    "ast_hash": "428a2badb65a7d63575b44225fd95b79",
+    "semantic_hash": "428a2badb65a7d63575b44225fd95b79"
+  },
+  "tests/mali_kutf_clk_rate_trace/kernel/mali_kutf_clk_rate_trace_test.c": {
+    "mtime": 1785064746.636,
+    "ast_hash": "f4c043f22a80a3f046ccc0c5e397422c",
+    "semantic_hash": "f4c043f22a80a3f046ccc0c5e397422c"
+  },
+  "tests/mali_kutf_clk_rate_trace/mali_kutf_clk_rate_trace_test.h": {
+    "mtime": 1785064746.639,
+    "ast_hash": "90c502fc6563c515ad05f7fecf5990a0",
+    "semantic_hash": "90c502fc6563c515ad05f7fecf5990a0"
+  },
+  "tests/mali_kutf_irq_test/mali_kutf_irq_test_main.c": {
+    "mtime": 1785064746.64,
+    "ast_hash": "13950199170cbb6b2e7b535dc1cae2a2",
+    "semantic_hash": "13950199170cbb6b2e7b535dc1cae2a2"
+  },
+  "tests/mali_kutf_mgm_integration_test/mali_kutf_mgm_integration_test_main.c": {
+    "mtime": 1785064746.642,
+    "ast_hash": "973f964dbc09bfac63824686c7e2e312",
+    "semantic_hash": "973f964dbc09bfac63824686c7e2e312"
+  },
+  "thirdparty/mali_kbase_mmap.c": {
+    "mtime": 1785064746.642,
+    "ast_hash": "7bbd12ea4947457e6ef0638f539ee952",
+    "semantic_hash": "7bbd12ea4947457e6ef0638f539ee952"
+  },
+  "tl/backend/mali_kbase_timeline_csf.c": {
+    "mtime": 1785064746.646,
+    "ast_hash": "4e8bf7220c7b66c7d1b6eda85b07beda",
+    "semantic_hash": "4e8bf7220c7b66c7d1b6eda85b07beda"
+  },
+  "tl/backend/mali_kbase_timeline_jm.c": {
+    "mtime": 1785064746.647,
+    "ast_hash": "074f7866a6e91c59b2a50727fb47346c",
+    "semantic_hash": "074f7866a6e91c59b2a50727fb47346c"
+  },
+  "tl/mali_kbase_timeline.c": {
+    "mtime": 1785064746.647,
+    "ast_hash": "114851cbf6300797cbacbb66211e67f3",
+    "semantic_hash": "114851cbf6300797cbacbb66211e67f3"
+  },
+  "tl/mali_kbase_timeline.h": {
+    "mtime": 1785064746.648,
+    "ast_hash": "37dd0def123fceb8986de8bc1a9854a3",
+    "semantic_hash": "37dd0def123fceb8986de8bc1a9854a3"
+  },
+  "tl/mali_kbase_timeline_io.c": {
+    "mtime": 1785064746.649,
+    "ast_hash": "4a4852c6a9fd833a2cd59269b15d6058",
+    "semantic_hash": "4a4852c6a9fd833a2cd59269b15d6058"
+  },
+  "tl/mali_kbase_timeline_priv.h": {
+    "mtime": 1785064746.649,
+    "ast_hash": "32c9952155521c7de2030693f949b728",
+    "semantic_hash": "32c9952155521c7de2030693f949b728"
+  },
+  "tl/mali_kbase_tl_serialize.h": {
+    "mtime": 1785064746.65,
+    "ast_hash": "81ccab341db3d104f91bf573076bfdcb",
+    "semantic_hash": "81ccab341db3d104f91bf573076bfdcb"
+  },
+  "tl/mali_kbase_tlstream.c": {
+    "mtime": 1785064746.651,
+    "ast_hash": "cf4b75ecfbcc49c0351b65a475ba32fe",
+    "semantic_hash": "cf4b75ecfbcc49c0351b65a475ba32fe"
+  },
+  "tl/mali_kbase_tlstream.h": {
+    "mtime": 1785064746.651,
+    "ast_hash": "ed7883739e8b157d8f6f7cc9373bb195",
+    "semantic_hash": "ed7883739e8b157d8f6f7cc9373bb195"
+  },
+  "tl/mali_kbase_tracepoints.c": {
+    "mtime": 1785064746.653,
+    "ast_hash": "6c92832651ff8415dd90c1d8613d7889",
+    "semantic_hash": "6c92832651ff8415dd90c1d8613d7889"
+  },
+  "tl/mali_kbase_tracepoints.h": {
+    "mtime": 1785064746.655,
+    "ast_hash": "a342672672e1894d95adaa13dea1b4e7",
+    "semantic_hash": "a342672672e1894d95adaa13dea1b4e7"
+  }
+}
