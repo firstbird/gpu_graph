@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mali kbase — IOCTL Call Hierarchy</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root {
+  --bg: #0f172a; --surface: #1e293b; --border: #334155;
+  --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+  --warn: #fbbf24; --ok: #34d399; --err: #f87171;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+.container { max-width: 1180px; margin: 0 auto; padding: 40px 24px 80px; }
+h1 { font-size: 2rem; margin-bottom: 8px; color: var(--accent); }
+h2 { font-size: 1.5rem; margin: 48px 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); scroll-margin-top: 16px; }
+h3 { font-size: 1.15rem; margin: 24px 0 10px; color: var(--warn); }
+p, li { color: var(--muted); }
+.subtitle { color: var(--muted); margin-bottom: 28px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+.mermaid { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 16px 0; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; margin: 12px 0; }
+th { background: #1a2744; color: var(--accent); text-align: left; padding: 10px 12px; border: 1px solid var(--border); }
+td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; color: var(--muted); }
+tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+code { font-family: 'Fira Code', Consolas, monospace; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 3px; font-size: 0.88em; color: #e0f2fe; }
+.tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; }
+.tag-p0 { background: #dc262633; color: var(--err); }
+.tag-p1 { background: #d9770633; color: var(--warn); }
+.tag-p2 { background: #2563eb33; color: var(--accent); }
+.tag-jm { background: #05966933; color: var(--ok); }
+.tag-csf { background: #7c3aed33; color: #a78bfa; }
+.tag-both { background: #334155; color: #cbd5e1; }
+.note { font-size: 0.9rem; color: var(--muted); margin-top: 8px; }
+ul { margin: 8px 0 8px 22px; }
+a { color: var(--accent); }
+.toc a { margin-right: 12px; white-space: nowrap; }
+.done { border-left: 3px solid var(--ok); }
+.nav { position: sticky; top: 0; z-index: 5; background: rgba(15,23,42,0.95); border-bottom: 1px solid var(--border); padding: 10px 0; margin: 0 -24px 24px; padding-left: 24px; padding-right: 24px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Mali kbase IOCTL Call Hierarchy</h1>
+  <p class="subtitle">基于 graphify + 源码（android-13.0.0_r0.127）。总入口 <code>kbase_ioctl()</code>（<code>mali_kbase_core_linux.c</code>）。父→子为调用关系；省略纯锁 / Trace / 宏包装。</p>
+
+  <div class="nav card toc">
+    <p style="margin:0;color:var(--text);font-size:0.9rem;">
+      <a href="#catalog">目录</a>
+      <a href="#job-submit">① JOB_SUBMIT</a>
+      <a href="#mem-alloc">② MEM_ALLOC</a>
+      <a href="#cs-kick">③ CS_QUEUE_KICK</a>
+      <a href="#set-flags">④ SET_FLAGS</a>
+      <a href="#cs-group">⑤ GROUP_CREATE</a>
+      <a href="#cs-reg-bind">⑥ REGISTER / BIND</a>
+      <a href="#mem-life">⑦ MEM_FREE / COMMIT / IMPORT</a>
+      <a href="#sync">⑧ Sync / Soft Event</a>
+      <a href="#setup-query">⑨ VERSION / GPUPROPS</a>
+    </p>
+  </div>
+
+  <h2 id="catalog">0. 主要 IOCTL 入口清单</h2>
+  <div class="card">
+    <table>
+      <thead>
+        <tr><th>优先级</th><th>IOCTL</th><th>Handler</th><th>后端</th><th>状态</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="tag tag-p0">P0</span></td><td><code>JOB_SUBMIT</code></td><td><code>kbase_api_job_submit</code></td><td><span class="tag tag-jm">JM</span></td><td><a href="#job-submit">① 已画</a></td></tr>
+        <tr><td><span class="tag tag-p0">P0</span></td><td><code>MEM_ALLOC</code> / <code>MEM_ALLOC_EX</code></td><td><code>kbase_api_mem_alloc(_ex)</code></td><td><span class="tag tag-both">共用</span></td><td><a href="#mem-alloc">② 已画</a></td></tr>
+        <tr><td><span class="tag tag-p0">P0</span></td><td><code>CS_QUEUE_KICK</code></td><td><code>kbasep_cs_queue_kick</code> → <code>kbase_csf_queue_kick</code></td><td><span class="tag tag-csf">CSF</span></td><td><a href="#cs-kick">③ 已画</a></td></tr>
+        <tr><td><span class="tag tag-p1">P1</span></td><td><code>SET_FLAGS</code></td><td><code>kbase_api_set_flags</code></td><td><span class="tag tag-both">共用</span></td><td><a href="#set-flags">④ 已画</a></td></tr>
+        <tr><td><span class="tag tag-p1">P1</span></td><td><code>CS_QUEUE_GROUP_CREATE</code></td><td><code>kbasep_cs_queue_group_create</code></td><td><span class="tag tag-csf">CSF</span></td><td><a href="#cs-group">⑤ 已画</a></td></tr>
+        <tr><td><span class="tag tag-p1">P1</span></td><td><code>CS_QUEUE_REGISTER</code> / <code>BIND</code></td><td><code>kbase_csf_queue_register</code> / <code>bind</code></td><td><span class="tag tag-csf">CSF</span></td><td><a href="#cs-reg-bind">⑥ 已画</a></td></tr>
+        <tr><td><span class="tag tag-p1">P1</span></td><td><code>MEM_FREE</code> / <code>COMMIT</code> / <code>IMPORT</code></td><td><code>kbase_api_mem_*</code></td><td><span class="tag tag-both">共用</span></td><td><a href="#mem-life">⑦ 已画</a></td></tr>
+        <tr><td><span class="tag tag-p2">P2</span></td><td><code>STREAM_CREATE</code> / <code>FENCE_VALIDATE</code> / Soft Event</td><td>sync / softjob API</td><td><span class="tag tag-jm">JM 偏多</span></td><td><a href="#sync">⑧ 已画</a></td></tr>
+        <tr><td><span class="tag tag-p2">P2</span></td><td><code>VERSION_CHECK</code> / <code>GET_GPUPROPS</code></td><td>handshake / gpuprops</td><td><span class="tag tag-both">共用</span></td><td><a href="#setup-query">⑨ 已画</a></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ===================== ① JOB_SUBMIT ===================== -->
+  <h2 id="job-submit">① <code>KBASE_IOCTL_JOB_SUBMIT</code>（JM）</h2>
+  <div class="card done">
+    <p><code>kbase_ioctl</code> → <code>kbase_api_job_submit</code> → <code>kbase_jd_submit</code> → … → HW。两条上槽出口：<code>add_job</code> 内 <code>try_kick</code>；循环末尾 <code>sched_all</code>。</p>
+  </div>
+
+  <h3>①-A 总览</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  E0["unlocked_ioctl / kbase_ioctl()<br/><small>mali_kbase_core_linux.c</small>"]
+  E1["case JOB_SUBMIT"]
+  E2["kbase_api_job_submit()"]
+  E3["kbase_jd_submit()<br/><small>mali_kbase_jd.c</small>"]
+  E0 --> E1 --> E2 --> E3
+  E3 --> F1["kbase_backend_get_current_flush_id()"]
+  E3 --> F2["copy_from_user → base_jd_atom"]
+  E3 --> F3["jd_submit_atom()"]
+  E3 --> F4["kbase_disjoint_event_potential()"]
+  E3 --> F5["若 need_sched：kbase_js_sched_all()"]
+  F3 --> G3{"SOFT_JOB?"}
+  G3 -->|"是"| G4["kbase_prepare_soft_job()"]
+  G3 -->|"否"| G5["kbase_js_is_atom_valid()"]
+  F3 --> G6["可选：kbase_jd_pre_external_resources()"]
+  F3 --> G7["jd_run_atom()"]
+  G7 --> H1{"atom 类型"}
+  H1 -->|"DEP"| H2["jd_mark_atom_complete()"]
+  H1 -->|"SOFT"| H3["kbase_process_soft_job()"]
+  H1 -->|"GPU"| H4["kbasep_js_add_job()"]
+  H4 --> J2["kbase_js_dep_validate()"]
+  H4 --> J3["kbase_js_dep_resolved_submit()"]
+  H4 --> J4["pullable / unpullable 列表"]
+  H4 --> J5["若 active_kctx：kbase_jm_try_kick()"]
+  F5 --> S0["kbase_js_sched_all() → kbase_js_sched()"]
+  J5 --> S1["kbase_jm_try_kick() → kick()"]
+  S0 --> S2["kbase_jm_kick()"]
+  S1 --> S2
+  S2 --> S3["kbase_jm_next_job()"]
+  S3 --> S4["kbase_js_pull()"]
+  S4 --> S5["kbase_backend_run_atom()"]
+  S5 --> S8["kbase_job_hw_submit()"]
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  classDef hw fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  class E0,E1 entry; class E2,E3,F3,G7,H4,S0,S4,S5 key; class S8 hw;
+  </div>
+
+  <h3>①-B sched → HW 子树</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 24, "rankSpacing": 38, "useMaxWidth": true}}}%%
+flowchart TD
+  R0["kbase_js_sched_all()"] --> R1["kbase_js_sched()"]
+  R1 --> R2["pop pullable ctx"]
+  R1 --> R3["use_ctx / PM active"]
+  R1 --> R4["kbase_jm_kick()"]
+  R4 --> R6["kbase_jm_next_job()"]
+  R6 --> R7["kbase_js_pull()"]
+  R7 --> R8["peek / 阻塞检查 / rb_pull"]
+  R6 --> R9["kbase_backend_run_atom()"]
+  R9 --> R11["kbase_job_hw_submit()"]
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  classDef hw fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  class R0 entry; class R1,R4,R6,R7,R9 key; class R11 hw;
+  </div>
+
+  <!-- ===================== ② MEM_ALLOC ===================== -->
+  <h2 id="mem-alloc">② <code>KBASE_IOCTL_MEM_ALLOC</code> / <code>MEM_ALLOC_EX</code></h2>
+  <div class="card done">
+    <p><code>MEM_ALLOC</code> 在 CSF 路径先转成 <code>mem_alloc_ex</code> 再调同一核心；JM 路径直接调 <code>kbase_mem_alloc</code>。SAME_VA 返回 cookie，真正页表在后续 <code>mmap</code>。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  A0["kbase_ioctl()"] --> A1{"MEM_ALLOC 或 MEM_ALLOC_EX"}
+  A1 -->|"MEM_ALLOC"| A2["kbase_api_mem_alloc()"]
+  A1 -->|"MEM_ALLOC_EX CSF"| A3["kbase_api_mem_alloc_ex()"]
+  A2 --> A3
+  A2 --> A2b["JM：直接 kbase_mem_alloc()"]
+  A3 --> A4["校验 flags / FIXED / CSF_EVENT"]
+  A3 --> A5["kbase_mem_alloc()<br/><small>mali_kbase_mem_linux.c</small>"]
+  A2b --> A5
+
+  A5 --> B1["kbase_check_alloc_flags()"]
+  A5 --> B2["kbase_check_alloc_sizes()"]
+  A5 --> B3["选 zone / rbtree<br/>SAME_VA / EXEC / CUSTOM / FIXED"]
+  A5 --> B4["kbase_alloc_free_region()"]
+  A5 --> B5["kbase_update_region_flags()"]
+  A5 --> B6["kbase_reg_prepare_native()"]
+  A5 --> B7["kbase_alloc_phy_pages()"]
+  A5 --> B8{"SAME_VA?"}
+  B8 -->|"是"| B9["绑 cookie → pending_regions<br/>返回 cookie 作 gpu_va"]
+  B8 -->|"否"| B10["kbase_gpu_mmap()<br/>建 GPU 页表，返回真实 VA"]
+
+  B9 -.->|"用户后续 mmap"| B11["kbase_context_mmap()<br/>pending_regions → PTE"]
+  B10 --> B12["可选 JIT trim 记账"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  classDef hw fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  class A0,A1 entry; class A3,A5,B7,B10 key; class B11 hw;
+  </div>
+  <table>
+    <tr><th>层级</th><th>函数</th><th>文件</th></tr>
+    <tr><td>IOCTL</td><td><code>kbase_api_mem_alloc(_ex)</code></td><td><code>mali_kbase_core_linux.c</code></td></tr>
+    <tr><td>Mem</td><td><code>kbase_mem_alloc</code></td><td><code>mali_kbase_mem_linux.c</code></td></tr>
+    <tr><td>Region</td><td><code>kbase_alloc_free_region</code> / <code>update_region_flags</code></td><td><code>mali_kbase_mem.c</code> 等</td></tr>
+    <tr><td>物理</td><td><code>kbase_alloc_phy_pages</code></td><td>mem pool / 页分配</td></tr>
+    <tr><td>MMU</td><td><code>kbase_gpu_mmap</code> 或稍后 <code>mmap</code></td><td>mem_linux / mmu</td></tr>
+  </table>
+
+  <!-- ===================== ③ CS_QUEUE_KICK ===================== -->
+  <h2 id="cs-kick">③ <code>KBASE_IOCTL_CS_QUEUE_KICK</code>（CSF）</h2>
+  <div class="card done">
+    <p>CSF 侧“有活了”的主入口：ioctl 只置 <code>queue->pending</code> 并排队 worker；真正 <code>scheduler_queue_start</code> / 抢 CSG slot 在异步路径。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  K0["kbase_ioctl()"] --> K1["case CS_QUEUE_KICK"]
+  K1 --> K2["kbasep_cs_queue_kick()"]
+  K2 --> K3["kbase_csf_queue_kick()<br/><small>csf/mali_kbase_csf.c</small>"]
+  K3 --> K4["kbase_gpu_vm_lock()"]
+  K3 --> K5["find_region_enclosing_address<br/>buffer_gpu_addr"]
+  K3 --> K6["region→queue user_data"]
+  K3 --> K7["atomic_cmpxchg pending 0→1"]
+  K3 --> K8["enqueue_gpu_submission_work()"]
+  K8 --> K9["kthread_queue_work<br/>pending_submission_worker"]
+
+  K9 --> W1["pending_submission_worker()"]
+  W1 --> W2["kbase_reset_gpu_prevent_and_wait()"]
+  W1 --> W3["遍历 kctx→csf.queue_list"]
+  W3 --> W4["pending 1→0 的 queue"]
+  W4 --> W5["get_bound_queue_group()"]
+  W4 --> W6["kbase_csf_scheduler_queue_start()"]
+  W6 --> W7["scheduler_group_schedule(group)"]
+  W7 --> W8["组进 runnable / 抢 CSG slot"]
+  W8 --> W9["固件 start/resume；用户态写 doorbell"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  classDef hw fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  class K0,K1 entry; class K3,K8,W1,W6 key; class W9 hw;
+  </div>
+
+  <!-- ===================== ④ SET_FLAGS ===================== -->
+  <h2 id="set-flags">④ <code>KBASE_IOCTL_SET_FLAGS</code></h2>
+  <div class="card done">
+    <p>Setup 末步：现代 API 在此创建 <code>kbase_context</code>；旧 API 可能只清 <code>KCTX_SUBMIT_DISABLED</code>。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  S0["kbase_ioctl()"] --> S1["case SET_FLAGS"]
+  S1 --> S2["kbase_api_set_flags()"]
+  S2 --> S3["校验 create_flags"]
+  S2 --> S4{"supports_system_monitor?"}
+  S4 -->|"是 现代路径"| S5["kbase_file_create_kctx()"]
+  S4 -->|"否 兼容路径"| S6["get_kctx_if_setup_complete"]
+  S6 --> S7["JM：清 KCTX_SUBMIT_DISABLED"]
+
+  S5 --> C1["setup_state NEED_CTX→IN_PROGRESS"]
+  S5 --> C2["kbase_create_context()<br/><small>context/backend/*_jm|_csf.c</small>"]
+  C2 --> C3["遍历 context_init[]"]
+  C3 --> C4["common / mem_pool / MMU"]
+  C3 --> C5["region_tracker / JIT"]
+  C3 --> C6["JM：js_kctx_init + jd_init<br/>CSF：csf_ctx_init"]
+  C3 --> C7["event / debugfs / 加入 kctx_list"]
+  C3 --> C8["platform_context_init"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class S0,S1 entry; class S2,S5,C2,C3 key;
+  </div>
+
+  <!-- ===================== ⑤ GROUP_CREATE ===================== -->
+  <h2 id="cs-group">⑤ <code>KBASE_IOCTL_CS_QUEUE_GROUP_CREATE</code>（CSF）</h2>
+  <div class="card done">
+    <p>创建调度实体 <code>kbase_queue_group</code>（CSG），分配 handle、优先级、suspend buffer。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  G0["kbase_ioctl()"] --> G1["case CS_QUEUE_GROUP_CREATE"]
+  G1 --> G2["kbasep_cs_queue_group_create()"]
+  G2 --> G3["kbase_csf_queue_group_create()"]
+  G3 --> G4["校验 mask / priority / cs_min / handlers"]
+  G3 --> G5["iface_has_enough_streams()"]
+  G3 --> G6["create_queue_group()"]
+  G6 --> G7["find_free_group_handle()"]
+  G6 --> G8["kmalloc kbase_queue_group"]
+  G6 --> G9["填 tiler/fragment/compute mask"]
+  G6 --> G10["kbase_csf_priority_check()"]
+  G6 --> G11["generate_group_uid()"]
+  G6 --> G12["create_suspend_buffers()"]
+  G6 --> G13["挂入 kctx 组表；返回 group_handle"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class G0,G1 entry; class G3,G6,G12 key;
+  </div>
+
+  <!-- ===================== ⑥ REGISTER / BIND ===================== -->
+  <h2 id="cs-reg-bind">⑥ <code>CS_QUEUE_REGISTER</code> / <code>CS_QUEUE_BIND</code>（CSF）</h2>
+  <div class="card done">
+    <p>Register：把 CS buffer 区域登记为 <code>kbase_queue</code>。Bind：挂到某 group 的 CSI，返回 mmap_handle（doorbell / IO 页）。</p>
+  </div>
+  <h3>⑥-A REGISTER</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  R0["kbase_ioctl()"] --> R1["CS_QUEUE_REGISTER / REGISTER_EX"]
+  R1 --> R2["kbasep_cs_queue_register(_ex)"]
+  R2 --> R3["kbase_csf_queue_register(_ex)"]
+  R3 --> R4["csf_queue_register_internal()"]
+  R4 --> R5["find_queue 防重复"]
+  R4 --> R6["find_region_enclosing_address<br/>校验 CS buffer VA"]
+  R4 --> R7["可选：校验 cs_trace 区"]
+  R4 --> R8["分配 kbase_queue / 填 size priority"]
+  R4 --> R9["region→user_data = queue"]
+  R4 --> R10["加入 kctx→csf.queue_list"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class R0,R1 entry; class R4,R8 key;
+  </div>
+  <h3>⑥-B BIND</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  B0["kbase_ioctl()"] --> B1["case CS_QUEUE_BIND"]
+  B1 --> B2["kbasep_cs_queue_bind()"]
+  B2 --> B3["kbase_csf_queue_bind()"]
+  B3 --> B4["find_queue_group(handle)"]
+  B3 --> B5["find_queue(buffer_gpu_addr)"]
+  B3 --> B6["校验 csi_index / 未绑定"]
+  B3 --> B7["get_user_pages_mmap_handle()"]
+  B3 --> B8["group→bound_queues[csi]=queue"]
+  B3 --> B9["queue→group / bind_state=IN_PROGRESS"]
+  B3 --> B10["返回 mmap_handle 给用户态"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class B0,B1 entry; class B3,B7 key;
+  </div>
+
+  <!-- ===================== ⑦ MEM lifecycle ===================== -->
+  <h2 id="mem-life">⑦ <code>MEM_FREE</code> / <code>MEM_COMMIT</code> / <code>MEM_IMPORT</code></h2>
+  <div class="card done">
+    <p>内存生命周期其余主路径。Alias 类似 import，此处不单独展开。</p>
+  </div>
+
+  <h3>⑦-A MEM_FREE</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  F0["kbase_api_mem_free()"] --> F1["kbase_mem_free()"]
+  F1 --> F2{"gpu_addr 类型"}
+  F2 -->|"cookie 区间"| F3["pending_regions[cookie]<br/>kbase_free_alloced_region"]
+  F2 -->|"真实 GPU VA"| F4["find_region_base_address"]
+  F4 --> F5{"SAME_VA?"}
+  F5 -->|"是"| F6["拒绝：须 munmap"]
+  F5 -->|"否"| F7["kbase_mem_free_region()"]
+  F7 --> F8["unmap / 释放 phy / 拆 region"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class F0 entry; class F1,F7 key;
+  </div>
+
+  <h3>⑦-B MEM_COMMIT</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  C0["kbase_api_mem_commit()"] --> C1["kbase_mem_commit()"]
+  C1 --> C2["find_region_base_address"]
+  C1 --> C3["校验 GROWABLE / Native"]
+  C1 --> C4{"new_pages vs old"}
+  C4 -->|"增大"| C5["kbase_alloc_phy_pages_helper"]
+  C5 --> C6["kbase_mem_grow_gpu_mapping()"]
+  C4 -->|"缩小"| C7["kbase_mem_shrink()"]
+  C7 --> C8["shrink CPU/GPU mapping + free phy"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class C0 entry; class C1,C6,C7 key;
+  </div>
+
+  <h3>⑦-C MEM_IMPORT</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  I0["kbase_api_mem_import()"] --> I1["kbase_mem_import()"]
+  I1 --> I2["kbase_check_import_flags()"]
+  I1 --> I3{"import type"}
+  I3 -->|"UMM"| I4["kbase_mem_from_umm(fd)"]
+  I3 -->|"USER_BUFFER"| I5["kbase_mem_from_user_buffer()"]
+  I4 --> I6["建 kbase_va_region / 映射"]
+  I5 --> I6
+  I6 --> I7["返回 gpu_va / va_pages / flags"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class I0 entry; class I1,I4,I5 key;
+  </div>
+
+  <!-- ===================== ⑧ Sync ===================== -->
+  <h2 id="sync">⑧ Sync / Soft Event</h2>
+  <div class="card done">
+    <p><code>STREAM_CREATE</code> / <code>FENCE_VALIDATE</code> 走 sync_file（或 Android sync）；<code>SOFT_EVENT_UPDATE</code> 仅 JM，可唤醒等 soft event 的 atom 并 <code>sched_all</code>。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  subgraph SC["STREAM_CREATE"]
+    T0["kbase_api_stream_create()"] --> T1["kbase_sync_fence_stream_create()"]
+    T1 --> T2["返回 fence stream fd"]
+  end
+  subgraph FV["FENCE_VALIDATE"]
+    V0["kbase_api_fence_validate()"] --> V1["kbase_sync_fence_validate(fd)"]
+  end
+  subgraph SE["SOFT_EVENT_UPDATE JM"]
+    E0["kbase_api_soft_event_update()"] --> E1["kbase_soft_event_update()"]
+    E1 --> E2["kbasep_write_soft_event_status()"]
+    E1 --> E3{"SET?"}
+    E3 -->|"是"| E4["kbasep_complete_triggered_soft_events()"]
+    E4 --> E5["jd_done_nolock → 可能 kbase_js_sched_all()"]
+  end
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class T0,V0,E0 entry; class T1,E1,E4 key;
+  </div>
+
+  <!-- ===================== ⑨ Setup / query ===================== -->
+  <h2 id="setup-query">⑨ <code>VERSION_CHECK</code> / <code>GET_GPUPROPS</code></h2>
+  <div class="card done">
+    <p>树较浅：握手协商 API 版本；查询 GPU props buffer。均可在 setup 完成前调用。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  subgraph VC["VERSION_CHECK"]
+    H0["kbase_api_handshake()"] --> H1["协商 major/minor"]
+    H0 --> H2["kbase_file_set_api_version()"]
+    H0 --> H3{"旧 API?"}
+    H3 -->|"是"| H4["kbase_file_create_kctx<br/>SUBMIT_DISABLED"]
+  end
+  subgraph GP["GET_GPUPROPS"]
+    P0["kbase_api_get_gpuprops()"] --> P1{"size==0?"}
+    P1 -->|"是"| P2["返回 prop_buffer_size"]
+    P1 -->|"否"| P3["copy_to_user prop_buffer"]
+  end
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class H0,P0 entry; class H2,P3 key;
+  </div>
+
+  <div class="card" style="margin-top:40px;">
+    <p><strong>说明：</strong>次要 ioctl（TLSTREAM、HWCNT、GWT、sticky、KCPU、Tiler Heap 细节等）未展开。若需继续，可按同样粒度补图。</p>
+    <p class="note">源码总开关：<code>mali_kbase_core_linux.c</code> → <code>kbase_ioctl()</code>；JM/CSF 由 <code>MALI_USE_CSF</code> 互斥。</p>
+  </div>
+</div>
+<script>
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'dark' });
+  mermaid.run({ querySelector: '.mermaid' });
+</script>
+</body>
+</html>
