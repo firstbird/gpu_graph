@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mali kbase — Call Hierarchy 样例：kbase_jd_submit()</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<style>
+:root {
+  --bg: #0f172a; --surface: #1e293b; --border: #334155;
+  --text: #e2e8f0; --muted: #94a3b8; --accent: #38bdf8;
+  --warn: #fbbf24; --ok: #34d399; --err: #f87171;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.7; }
+.container { max-width: 1180px; margin: 0 auto; padding: 40px 24px 80px; }
+h1 { font-size: 2rem; margin-bottom: 8px; color: var(--accent); }
+h2 { font-size: 1.5rem; margin: 40px 0 14px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); scroll-margin-top: 16px; }
+h3 { font-size: 1.15rem; margin: 24px 0 10px; color: var(--warn); }
+p, li { color: var(--muted); }
+.subtitle { color: var(--muted); margin-bottom: 28px; }
+.card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px; margin: 14px 0; }
+.mermaid { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 16px 0; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; margin: 12px 0; }
+th { background: #1a2744; color: var(--accent); text-align: left; padding: 10px 12px; border: 1px solid var(--border); }
+td { padding: 8px 12px; border: 1px solid var(--border); vertical-align: top; color: var(--muted); }
+tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+code { font-family: 'Fira Code', Consolas, monospace; background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 3px; font-size: 0.88em; color: #e0f2fe; }
+.tag { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 0.78rem; font-weight: 600; }
+.tag-src { background: #2563eb33; color: var(--accent); }
+.tag-jm { background: #05966933; color: var(--ok); }
+.note { font-size: 0.9rem; color: var(--muted); margin-top: 8px; }
+ul { margin: 8px 0 8px 22px; }
+a { color: var(--accent); }
+.done { border-left: 3px solid var(--ok); }
+.nav { position: sticky; top: 0; z-index: 5; background: rgba(15,23,42,0.95); border-bottom: 1px solid var(--border); padding: 10px 0; margin: 0 -24px 24px; padding-left: 24px; padding-right: 24px; }
+.toc a { margin-right: 12px; white-space: nowrap; }
+.legend-dot { display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px; vertical-align:middle; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Mali kbase Call Hierarchy — 样例</h1>
+  <p class="subtitle">
+    函数：<code>kbase_jd_submit()</code>（JM Job-Submit 路径）&nbsp;·&nbsp;
+    来源：ARM 官方 Valhall kbase 驱动 <span class="tag tag-src">r48p0-01eac0</span>，
+    <code>drivers/gpu/arm/midgard/</code>&nbsp;·&nbsp;
+    这是按 <code>graphify</code> 输出风格（Mermaid + 深色卡片）手工核对源码后画的
+    <strong>单函数样例</strong>，用来验证在新驱动树上复用同一套可视化格式是否可行。
+    确认没问题后可以再扩展成完整的 IOCTL 目录（像 <code>ioctl-call-hierarchy.html</code> 那样）。
+  </p>
+
+  <div class="nav card toc">
+    <p style="margin:0 0 6px 0;color:var(--text);font-size:0.9rem;">
+      <a href="#job-submit">① 总览</a>
+      <a href="#jd-submit-atom">② jd_submit_atom</a>
+      <a href="#dep-complete">③ 依赖完成重入</a>
+      <a href="#expand">④~⑦ 蓝/绿节点展开</a>
+      <a href="#pre-extres">④ pre_external_resources</a>
+      <a href="#js-add-job">⑤ js_add_job</a>
+      <a href="#sched-hw">⑥ sched_all→HW</a>
+      <a href="#jd-done">⑦ jd_done_nolock</a>
+    </p>
+    <p style="margin:0;font-size:0.82rem;">
+      <span class="legend-dot" style="background:#fbbf24;"></span>橙色=IOCTL 入口&nbsp;&nbsp;
+      <span class="legend-dot" style="background:#38bdf8;"></span>蓝色=关键跳板函数（有对应展开图）&nbsp;&nbsp;
+      <span class="legend-dot" style="background:#34d399;"></span>绿色=终点/触发硬件（有对应展开图）&nbsp;&nbsp;
+      矩形=动作&nbsp;&nbsp;菱形=判断分支
+    </p>
+  </div>
+
+  <div class="card">
+    <table>
+      <thead><tr><th>层级</th><th>函数</th><th>文件:行号</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td>0 入口</td><td><code>kbase_ioctl()</code></td><td><code>mali_kbase_core_linux.c:2159</code></td><td><code>case KBASE_IOCTL_JOB_SUBMIT</code>（约 1902 行）</td></tr>
+        <tr><td>1</td><td><code>kbase_api_job_submit()</code></td><td><code>mali_kbase_core_linux.c:912</code></td><td>仅 <code>!MALI_USE_CSF</code>（JM）编译；直接转调</td></tr>
+        <tr><td>2</td><td><code>kbase_jd_submit()</code></td><td><code>mali_kbase_jd.c:1011</code></td><td>校验 stride/nr_atoms，逐 atom 拷贝 + 提交</td></tr>
+        <tr><td>3</td><td><code>jd_submit_atom()</code></td><td><code>mali_kbase_jd.c:698</code></td><td>单个 atom 的依赖检查、校验、分发</td></tr>
+        <tr><td>4</td><td><code>kbasep_js_add_job()</code></td><td>js 子系统</td><td>GPU atom 进作业调度器</td></tr>
+        <tr><td>4</td><td><code>kbase_jd_done_nolock()</code></td><td><code>mali_kbase_jd.c</code></td><td>校验失败 / 纯依赖 atom 的立即完成出口</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2 id="job-submit">① <code>kbase_jd_submit()</code> 总览</h2>
+  <div class="card done">
+    <p>用户态一次 <code>ioctl(JOB_SUBMIT)</code> 可携带多个 atom；内核逐个 <code>copy_from_user</code> 后调用
+    <code>jd_submit_atom()</code>。若某 atom 编号仍在用（上一提交未完成），当前线程会先
+    <code>kbase_js_sched_all()</code> 踢一次调度器，再阻塞等待该 atom 完成。循环结束后，只要本批里有任意
+    atom 需要重新调度（<code>need_to_try_schedule_context</code>），再统一调一次 <code>kbase_js_sched_all()</code>。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  E0["kbase_ioctl()<br/><small>mali_kbase_core_linux.c:2159</small>"]
+  E1["case KBASE_IOCTL_JOB_SUBMIT<br/><small>:1902</small>"]
+  E2["kbase_api_job_submit()<br/><small>:912 (JM only)</small>"]
+  E3["kbase_jd_submit()<br/><small>mali_kbase_jd.c:1011</small>"]
+  E0 --> E1 --> E2 --> E3
+
+  E3 --> F1["kbase_backend_get_current_flush_id()<br/><small>:1054，本批统一 flush_id</small>"]
+  E3 --> F2{"for i in 0..nr_atoms"}
+  F2 --> F3["copy_from_user → base_jd_atom<br/><small>:1064 / :1076</small>"]
+  F3 --> F4{"katom 编号是否仍占用？<br/><small>:1150</small>"}
+  F4 -->|"是：等待"| F5["kbase_js_sched_all()<br/><small>:1163，踢调度器</small>"]
+  F5 --> F6["wait_event_killable(完成)<br/><small>:1165</small>"]
+  F6 -.->|"完成后重试"| F3
+  F4 -->|"否：可用"| F7["jd_submit_atom()<br/><small>:1176</small>"]
+  F7 --> F8["kbase_disjoint_event_potential()<br/><small>:1181</small>"]
+  F8 --> F2
+  F2 -->|"循环结束"| F9{"need_to_try_schedule_context?"}
+  F9 -->|"是"| F10["kbase_js_sched_all()<br/><small>:1193</small>"]
+  F9 -->|"否"| F11["return err"]
+  F10 --> F11
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  classDef hw fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  class E0,E1 entry; class E2,E3,F7 key; class F10 hw;
+  </div>
+
+  <h2 id="jd-submit-atom">② <code>jd_submit_atom()</code> 展开</h2>
+  <div class="card done">
+    <p>单个 atom 的完整判定链：先做依赖数组的合法性检查，再登记依赖、处理外部资源、软/硬 job 分流，
+    最终要么立即经 <code>kbase_jd_done_nolock()</code> 完成，要么经 <code>kbasep_js_add_job()</code> 交给作业调度器。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  A0["jd_submit_atom()<br/><small>mali_kbase_jd.c:698</small>"]
+  A0 --> A1["填充 katom 字段<br/><small>:724-763</small>"]
+  A1 --> A2{"pre_dep 类型合法？<br/><small>:773</small>"}
+  A2 -->|"否"| A3["kbase_jd_done_nolock(true)<br/><small>:790，直接返回</small>"]
+  A2 -->|"是"| A4["登记依赖 / 判定 will_fail<br/><small>:796-838</small>"]
+  A4 --> A5{"will_fail 且未 queued？<br/><small>:840</small>"}
+  A5 -->|"是，且是 soft job"| A6["kbase_prepare_soft_job()<br/>+ kbase_finish_soft_job()<br/><small>:847-850</small>"]
+  A6 --> A3b["kbase_jd_done_nolock(true)<br/><small>:852</small>"]
+  A5 -->|"否，继续正常路径"| A7{"core_req 校验<br/><small>device_nr / EXTERNAL_RES 等 :900-926</small>"}
+  A7 -->|"不合法"| A3
+  A7 -->|"合法"| A8{"BASE_JD_REQ_EXTERNAL_RESOURCES?"}
+  A8 -->|"是"| A9["kbase_jd_pre_external_resources()<br/><small>:930</small>"]
+  A9 -->|"失败"| A3
+  A9 -->|"成功"| A10
+  A8 -->|"否"| A10{"BASE_JD_REQ_SOFT_JOB?"}
+  A10 -->|"是"| A11["kbase_prepare_soft_job()<br/><small>:962</small>"]
+  A11 -->|"失败"| A3
+  A11 -->|"成功，且未排队"| A12["kbase_process_soft_job()<br/>+ kbase_finish_soft_job()<br/><small>:978-979</small>"]
+  A12 --> A3b
+  A10 -->|"否：硬件 atom"| A13{"queued 且非 GPU atom?<br/><small>:974</small>"}
+  A13 -->|"是"| A14["return false（先挂依赖表）"]
+  A13 -->|"否"| A15{"core_req != DEP?<br/><small>:985</small>"}
+  A15 -->|"是"| A16["kbasep_js_add_job()<br/><small>:991，交给作业调度器</small>"]
+  A15 -->|"否（纯依赖 atom）"| A17["kbase_jd_done_nolock(true)<br/><small>:1008</small>"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  classDef done fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  class A0 entry; class A9,A16 key; class A3,A3b,A17 done;
+  </div>
+
+  <h2 id="dep-complete">③ 依赖完成后的重入路径：<code>kbase_jd_dep_clear_locked()</code></h2>
+  <div class="card done">
+    <p>当某个前置 atom 完成时（不在本次 submit 调用栈内，而是在完成回调路径中），
+    <code>kbase_jd_dep_clear_locked()</code> 会检查后继 atom 的依赖是否已全部满足，
+    满足则调用 <code>jd_run_atom()</code> 直接运行它——这条路径和 ② 里 <code>kbasep_js_add_job()</code>
+    是两个不同的“把 atom 真正跑起来”的入口，图中一并标出方便对照。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  D0["kbase_jd_dep_clear_locked()<br/><small>mali_kbase_jd.c:122</small>"]
+  D0 --> D1{"依赖是否已清？<br/><small>:135</small>"}
+  D1 -->|"是"| D2["jd_run_atom()<br/><small>:142 / 定义于 :89</small>"]
+  D2 --> D3{"core_req 类型"}
+  D3 -->|"DEP-only"| D4["jd_mark_atom_complete()<br/><small>:100</small>"]
+  D3 -->|"SOFT_JOB"| D5["kbase_process_soft_job() /<br/>kbase_finish_soft_job()<br/><small>:105-112</small>"]
+  D3 -->|"GPU atom"| D6["kbasep_js_add_job()<br/><small>:119</small>"]
+  D2 --> D7{"katom 已 COMPLETED?<br/><small>:146</small>"}
+  D7 -->|"是"| D8["kbase_jd_done_nolock(true)<br/><small>:148</small>"]
+  D2 --> D9{"resched?"}
+  D9 -->|"是"| D10["kbase_js_sched_all()<br/><small>:152</small>"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class D0 entry; class D2,D6 key;
+  </div>
+
+  <!-- ===================== 递归子图：蓝/绿关键节点展开 ===================== -->
+  <h2 id="expand">④~⑦ 蓝/绿关键节点递归拆解</h2>
+  <div class="card">
+    <p>下面把 ①②③ 三张图里出现的蓝色（关键跳板）和绿色（终点/触发硬件）节点继续往下展开一层。
+    <strong>子图入口节点沿用它在上层图里的颜色</strong>（蓝还是蓝、绿还是绿），这样从任何一张图都能顺着颜色找到它的展开图。</p>
+  </div>
+
+  <h3 id="pre-extres">④ <code>kbase_jd_pre_external_resources()</code>（蓝，来自 ②）</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  P0["kbase_jd_pre_external_resources()<br/><small>mali_kbase_jd.c:187</small>"]
+  P0 --> P1{"nr_extres == 0?<br/><small>:198</small>"}
+  P1 -->|"是"| P2["return -EINVAL"]
+  P1 -->|"否"| P3["kmalloc katom-&gt;extres[]<br/><small>:201</small>"]
+  P3 --> P4["kmalloc + copy_from_user input_extres[]<br/><small>:205-215</small>"]
+  P4 --> P5["down_read(mmap_lock)<br/>kbase_gpu_vm_lock()<br/><small>:218-221</small>"]
+  P5 --> P6{"for res_no in 0..nr_extres<br/><small>:222</small>"}
+  P6 --> P7["find_region_enclosing_address()<br/><small>:226</small>"]
+  P7 --> P8{"region 有效？"}
+  P8 -->|"否"| P9["回滚：逐个 kbase_unmap_external_resource()<br/><small>:260-268</small>"]
+  P8 -->|"是"| P10["kbase_map_external_resource()<br/><small>:240</small>"]
+  P10 -->|"失败"| P9
+  P10 -->|"成功"| P6
+  P6 -->|"循环结束"| P11["kbase_gpu_vm_unlock() + up_read(mmap_lock)<br/><small>:248-251</small>"]
+  P9 --> P11b["kbase_gpu_vm_unlock() + up_read(mmap_lock)<br/><small>:269-272</small>"]
+  P11 --> P12["kfree(input_extres)；return 0<br/><small>:254-257</small>"]
+  P11b --> P13["kfree(input_extres)；return err<br/><small>:274-278</small>"]
+
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  classDef done fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  class P0 key; class P12 done; class P2,P13 done;
+  </div>
+
+  <h3 id="js-add-job">⑤ <code>kbasep_js_add_job()</code>（蓝，来自 ②③）</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  J0["kbasep_js_add_job()<br/><small>mali_kbase_js.c:1547</small>"]
+  J0 --> J1{"START/END_RENDERPASS？<br/><small>:1569</small>"}
+  J1 -->|"是"| J2["js_add_start_rp() / js_add_end_rp()"]
+  J1 -->|"否"| J3
+  J2 -->|"err&lt;0"| J4["置 COMPLETED，goto out_unlock"]
+  J2 -->|"ok"| J3["nr_jobs++ / atoms_count++<br/><small>:1587-1594</small>"]
+  J3 --> J5{"kbase_js_dep_validate()？<br/><small>:1597</small>"}
+  J5 -->|"否：依赖无法表示"| J6["回滚计数，status=QUEUED<br/>goto out_unlock<br/><small>:1599-1625</small>"]
+  J5 -->|"是"| J7["kbase_js_dep_resolved_submit()<br/><small>:1628 → enqueue_required</small>"]
+  J7 --> J8["kbasep_js_ctx_attr_ctx_retain_atom()<br/><small>:1634</small>"]
+  J8 --> J9{"enqueue_required？"}
+  J9 -->|"是"| J10["加入 pullable/unpullable 列表<br/><small>:1637-1642</small>"]
+  J10 --> J11{"kctx 是该 slot 的 active_kctx？<br/><small>:1647</small>"}
+  J11 -->|"是"| J12["kbase_jm_try_kick()<br/><small>:1648，尝试抢跑</small>"]
+  J9 -->|"否"| J13
+  J11 -->|"否"| J13
+  J12 --> J13["释放锁，可能 kbase_backend_ctx_count_changed()<br/><small>:1650-1653</small>"]
+  J13 --> J14{"kctx 未 SCHEDULED 且 nr_jobs==1？<br/><small>:1656-1663</small>"}
+  J14 -->|"是"| J15["标记需要把 kctx 排入调度队列<br/><small>:1663-1673</small>"]
+  J13 --> J16["return enqueue_required<br/><small>:1684</small>"]
+  J14 --> J16
+  J4 --> J16b["out_unlock：return enqueue_required(=false)<br/><small>:1676-1684</small>"]
+  J6 --> J16b
+
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class J0 key; class J12 key;
+  </div>
+
+  <h3 id="sched-hw">⑥ <code>kbase_js_sched_all()</code> → HW 提交（绿，来自 ①③）</h3>
+  <div class="card">
+    <p>沿用 ①-B 子树，这次核对到具体行号：<code>kbase_js_sched_all()</code> 是 <code>mali_kbase_js.h</code>
+    里的内联包装，直接调 <code>kbase_js_sched(kbdev, all_slots_mask)</code>。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  S0["kbase_js_sched_all()<br/><small>mali_kbase_js.h 内联</small>"]
+  S0 --> S1["kbase_js_sched()<br/><small>mali_kbase_js.c:3504</small>"]
+  S1 --> S2["down(schedule_sem)<br/><small>:3519，全局节流</small>"]
+  S2 --> S3{"while js_mask：pop pullable kctx<br/><small>:3535</small>"}
+  S3 -->|"无 kctx"| S4["清该 slot 位"]
+  S3 -->|"有 kctx，非 ACTIVE"| S5["kbase_pm_context_active_handle_suspend()<br/><small>:3549</small>"]
+  S3 -->|"有 kctx，已 ACTIVE"| S6{"kbase_js_use_ctx()？<br/><small>:3568</small>"}
+  S5 --> S6
+  S6 -->|"否：暂不可用"| S7["放回队列，清 slot 位<br/><small>:3569-3591</small>"]
+  S6 -->|"是"| S8["kbase_jm_kick(1&lt;&lt;js)<br/><small>:3598</small>"]
+  S8 --> S9["kbase_jm_next_job()<br/><small>mali_kbase_jm.c:40</small>"]
+  S9 --> S10["kbase_js_pull()<br/><small>mali_kbase_js.c:2655，从 kctx 取下一个 atom</small>"]
+  S9 --> S11["kbase_backend_run_atom()<br/><small>backend/gpu/mali_kbase_jm_hw.c:1071</small>"]
+  S11 --> S12["kbase_job_hw_submit()<br/><small>backend/gpu/mali_kbase_jm_hw.c:195<br/>写 JS_HEAD/JS_COMMAND 寄存器</small>"]
+  S8 --> S3
+
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  classDef hw fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  class S0 hw; class S1,S8,S9,S11 key; class S12 hw;
+  </div>
+  <table>
+    <tr><th>调用点</th><th>用途</th></tr>
+    <tr><td><code>①-A</code> 循环里 atom 编号冲突时（:1163）</td><td>强制踢一次调度器，避免死等</td></tr>
+    <tr><td><code>①-A</code> 循环结束后（:1193）</td><td>批量提交完，统一尝试调度</td></tr>
+    <tr><td><code>③</code> <code>kbase_jd_dep_clear_locked()</code> 内 resched 时（:152）</td><td>依赖完成触发的重新调度</td></tr>
+  </table>
+
+  <h3 id="jd-done">⑦ <code>kbase_jd_done_nolock()</code>（绿，来自 ②③）</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  D0["kbase_jd_done_nolock()<br/><small>mali_kbase_jd.c:513</small>"]
+  D0 --> D1["清未消费的依赖项<br/><small>:538-543</small>"]
+  D1 --> D2["jd_mark_atom_complete()<br/><small>:545</small>"]
+  D2 --> D3["katom 入 completed_jobs 队列<br/><small>:547</small>"]
+  D3 --> D4{"while completed_jobs 非空<br/><small>:549</small>"}
+  D4 --> D5["jd_resolve_dep() 收集可运行后继<br/><small>:554-555 → runnable_jobs</small>"]
+  D5 --> D6{"含 EXTERNAL_RESOURCES？"}
+  D6 -->|"是"| D7["kbase_jd_post_external_resources()<br/><small>:558，unmap + 释放</small>"]
+  D6 -->|"否"| D8
+  D7 --> D8{"while runnable_jobs 非空<br/><small>:560</small>"}
+  D8 --> D9{"node 状态？"}
+  D9 -->|"IN_JS"| D10["跳过，等作业调度器<br/><small>:571-572</small>"]
+  D9 -->|"未完成且非 DYING"| D11["jd_run_atom(node)<br/><small>:578</small>"]
+  D9 -->|"已完成 或 DYING"| D12["置 COMPLETED；若 soft job 则<br/>kbase_finish_soft_job()<br/><small>:581-588</small>"]
+  D11 --> D13{"node 变 COMPLETED？"}
+  D13 -->|"是"| D14["加回 completed_jobs（外层继续处理）<br/><small>:591-592</small>"]
+  D13 -->|"否，仍 IN_JS"| D15["jd_try_submitting_deps(node)<br/><small>:599</small>"]
+  D12 --> D14
+  D8 -->|"循环结束"| D16["kbase_disjoint_event_potential()<br/><small>:606</small>"]
+  D16 --> D17{"post_immediately 且无排队事件？<br/><small>:607</small>"}
+  D17 -->|"是"| D18["kbase_event_post()<br/><small>:608，唤醒用户态 poll/read</small>"]
+  D17 -->|"否"| D19["挂到 kctx-&gt;completed_jobs<br/><small>:610</small>"]
+  D18 --> D4
+  D19 --> D4
+  D4 -->|"循环结束"| D20["return need_to_try_schedule_context<br/><small>:624</small>"]
+
+  classDef hw fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class D0 hw; class D11,D18 key; class D20 hw;
+  </div>
+
+  <!-- ===================== MEM_ALLOC ===================== -->
+  <h2 id="mem-alloc">⑧ <code>KBASE_IOCTL_MEM_ALLOC</code> / <code>MEM_ALLOC_EX</code>（P0）</h2>
+  <div class="card done">
+    <p>CSF 侧 <code>MEM_ALLOC</code> 先补零转成 <code>mem_alloc_ex</code> 参数再调同一份核心逻辑；JM 侧是完全独立的一份
+    <code>kbase_api_mem_alloc()</code>（<code>#else</code> 分支），但两者最终都调同一个 <code>kbase_mem_alloc()</code>。
+    <span class="note">深度说明：<code>kbase_alloc_phy_pages()</code>（物理页分配/mem pool）和
+    <code>kbase_gpu_mmap()</code>（MMU 建页表）本身还能再展开一层，但会牵扯到 mem pool / mmu 两个大文件，
+    这一版先只标出入口不整体铺开，你要是需要我再单独深挖。</span></p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  A0["kbase_ioctl()<br/><small>core_linux.c:2159</small>"]
+  A1{"MEM_ALLOC 或 MEM_ALLOC_EX<br/><small>:1912 / :1917</small>"}
+  A0 --> A1
+  A1 -->|"CSF：MEM_ALLOC"| A2["kbase_api_mem_alloc()<br/><small>:1043，转成 mem_alloc_ex 再调</small>"]
+  A2 --> A3["kbase_api_mem_alloc_ex()<br/><small>:951</small>"]
+  A1 -->|"CSF：MEM_ALLOC_EX"| A3
+  A1 -->|"JM：MEM_ALLOC"| A2b["kbase_api_mem_alloc()<br/><small>:1062（#else 独立实现）</small>"]
+
+  A3 --> A4["校验 FIXED/FIXABLE 互斥、CSF_EVENT 强制 flags<br/><small>:966-1029</small>"]
+  A4 --> A5["kbase_mem_alloc()<br/><small>mali_kbase_mem_linux.c:297</small>"]
+  A2b --> A6["校验 flags，强制 SAME_VA(64bit)<br/><small>:1073-1087</small>"]
+  A6 --> A5
+
+  A5 --> B1["kbase_check_alloc_flags/sizes()<br/><small>:323 / :354</small>"]
+  B1 --> B2["选 zone：SAME_VA / FIXED / EXEC_VA / CUSTOM_VA<br/><small>:366-382</small>"]
+  B2 --> B3["kbase_ctx_alloc_free_region()<br/><small>:384</small>"]
+  B3 --> B4["kbase_update_region_flags()<br/><small>:391</small>"]
+  B4 --> B5["kbase_reg_prepare_native()<br/><small>:394（绑定 cpu_alloc/gpu_alloc）</small>"]
+  B5 --> B6["kbase_alloc_phy_pages()<br/><small>:430（物理页/mem pool，未展开）</small>"]
+  B6 -->|"失败"| B7["回滚：kbase_mem_phy_alloc_put + kfree(reg)<br/><small>:534-538，return NULL</small>"]
+  B6 --> B8["kbase_gpu_vm_lock_with_pmode_sync()<br/><small>:437</small>"]
+  B8 --> B9{"SAME_VA？<br/><small>:453</small>"}
+  B9 -->|"是"| B10["绑 cookie → pending_regions[]<br/>*gpu_va = cookie<br/><small>:457-472</small>"]
+  B9 -->|"否"| B11["kbase_gpu_mmap()<br/><small>:492（MMU 建页表，未展开）<br/>*gpu_va = 真实 GPU VA</small>"]
+  B10 --> B12["kbase_gpu_vm_unlock_with_pmode_sync()<br/><small>:512，return reg</small>"]
+  B11 --> B12
+  B10 -.->|"用户后续 mmap()"| C1["kbase_context_mmap()<br/><small>见下方子图 ⑧-A</small>"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  classDef hw fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  class A0,A1 entry; class A3,A5,B3,B5,B6,B11,C1 key; class B12 hw;
+  </div>
+
+  <h3 id="alloc-free-region">⑧-A <code>kbase_ctx_alloc_free_region()</code>（蓝）</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  R0["kbase_ctx_alloc_free_region()<br/><small>mali_kbase_reg_track.c:1388</small>"]
+  R0 --> R1["kbase_ctx_reg_zone_get_nolock(kctx, id)<br/><small>:1392，取该 zone 的 rbtree</small>"]
+  R1 --> R2["kbase_alloc_free_region(zone, start_pfn, nr_pages)<br/><small>:1394 / 定义于 :1360</small>"]
+  R2 --> R3{"zone-&gt;base_pfn / va_size_pages 有效？<br/><small>:1361</small>"}
+  R3 -->|"否"| R4["return NULL"]
+  R3 -->|"是"| R5["kmem_cache_zalloc 分配 kbase_va_region<br/><small>:1364</small>"]
+  R5 --> R6["初始化 refcnt/flags=FREE|GROWABLE/rbtree<br/><small>:1369-1382</small>"]
+  R6 --> R7["return new_reg"]
+
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class R0 key;
+  </div>
+
+  <!-- ===================== CS_QUEUE_KICK ===================== -->
+  <h2 id="cs-kick">⑨ <code>KBASE_IOCTL_CS_QUEUE_KICK</code>（CSF，P0）</h2>
+  <div class="card done">
+    <p><strong>和旧文档（基于 android-13.0.0_r0.127 Pixel 源码）的一个明显差异</strong>：旧文档描述的是
+    per-context <code>kthread_queue_work</code> + <code>pending_submission_worker</code>；而这份 r48p0 通用驱动
+    已经重构成<strong>单个专用调度内核线程</strong> <code>mali-gpuq-kthread</code>（<code>kbase_csf_scheduler_kthread()</code>），
+    通过一个 completion（<code>kthread_signal</code>）统一唤醒，处理 queue kick / KCPU 命令 / protm 请求 / tick-tock 等多种待办事项。
+    这说明不同年份的驱动版本在这条路径上有实质性重构，不能直接照搬旧文档。</p>
+  </div>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  K0["kbase_ioctl()<br/><small>core_linux.c:2159</small>"]
+  K1["case CS_QUEUE_KICK<br/><small>:2068</small>"]
+  K2["kbasep_cs_queue_kick()<br/><small>core_linux.c:1521</small>"]
+  K3["kbase_csf_queue_kick()<br/><small>csf/mali_kbase_csf.c:889</small>"]
+  K0 --> K1 --> K2 --> K3
+  K3 --> K4["kbase_gpu_vm_lock()<br/><small>:904</small>"]
+  K4 --> K5["find_region_enclosing_address(buffer_gpu_addr)<br/><small>:905</small>"]
+  K5 --> K6{"region 有效 且 queue BOUND？<br/><small>:906-909</small>"}
+  K6 -->|"否"| K7["return -EFAULT（或直接忽略）"]
+  K6 -->|"是"| K8{"pending_kick_link 已在队列中？<br/><small>:911</small>"}
+  K8 -->|"是"| K9["跳过（已排队，避免重复）"]
+  K8 -->|"否"| K10["atomic_inc(pending_kick)<br/>挂到 pending_gpuq_kick_queues[priority]<br/><small>:915-918</small>"]
+  K10 --> K11{"pending_gpuq_kicks 0→true？<br/><small>:919</small>"}
+  K11 -->|"是（本次由我唤醒）"| K12["complete(scheduler.kthread_signal)<br/><small>:921，唤醒 mali-gpuq-kthread</small>"]
+  K11 -->|"否（已经有人唤醒过）"| K13["直接返回，无需重复唤醒"]
+  K4 --> K14["kbase_gpu_vm_unlock() + return err<br/><small>:930-932</small>"]
+  K12 --> K14
+  K13 --> K14
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class K0,K1 entry; class K3,K12 key;
+  </div>
+
+  <h3 id="gpuq-kthread">⑨-A <code>kbase_csf_scheduler_kthread()</code>（蓝，异步消费端）</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  T0["kbase_csf_scheduler_kthread()<br/><small>csf/mali_kbase_csf_scheduler.c:6722<br/>内核线程 “mali-gpuq-kthread”</small>"]
+  T0 --> T1["wait_for_completion_interruptible(kthread_signal)<br/><small>:6728</small>"]
+  T1 --> T2["handle_pending_sync_update_works()<br/><small>:6739</small>"]
+  T2 --> T3["handle_pending_protm_requests()<br/><small>:6740</small>"]
+  T3 --> T4["handle_pending_kcpuq_commands()<br/><small>:6741</small>"]
+  T4 --> T5["handle_pending_queue_kicks()<br/><small>:6742</small>"]
+  T5 --> T6{"逐个取 pending_gpuq_kick_queues 里的 queue<br/><small>:6686-6699（按优先级）</small>"}
+  T6 --> T7["kbase_csf_process_queue_kick(queue)<br/><small>:6708 / 定义于 csf.c:3268</small>"]
+  T7 --> T8["kbase_csf_scheduler_queue_start(queue)<br/><small>csf_scheduler.c:1884</small>"]
+  T8 --> T9{"scheduler_group_schedule() 成功？<br/><small>:1919</small>"}
+  T9 -->|"是，且已在 slot 上"| T10{"cs_enabled(已在跑)?"}
+  T10 -->|"是"| T11["kbase_csf_ring_cs_user_doorbell()<br/><small>:1937，踢一下用户 doorbell</small>"]
+  T10 -->|"否（新入队）"| T12["onslot_csg_add_new_queue()<br/><small>:1939</small>"]
+  T9 -->|"否 -EBUSY"| T13["重新挂回 pending_gpuq_kick_queues 尾部<br/>+ complete(kthread_signal) 再唤醒一次<br/><small>csf.c:3291-3305</small>"]
+  T6 -->|"高优先级且有 pending_tock_work"| T14["schedule_on_tock()<br/><small>:6717</small>"]
+  T5 --> T15{"pending_tick_work？<br/><small>:6747</small>"}
+  T15 -->|"是"| T16["schedule_on_tick()<br/><small>:6749，正常 tick 会驱动固件 CSG 调度</small>"]
+  T15 -->|"否 tock"| T14
+  T16 --> T17["drain pending_gpu_idle_work<br/><small>:6755</small>"]
+  T14 --> T17
+  T17 --> T18["wake_up_all(event_wait)<br/><small>:6759</small>"]
+  T18 -.->|"回到循环头"| T1
+
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  classDef hw fill:#052e1a,stroke:#34d399,color:#bbf7d0;
+  class T0 key; class T7,T8,T16 key; class T11,T12 hw;
+  </div>
+  <div class="note" style="padding:0 4px;">固件交互（CSG slot 编程、doorbell 写入等）发生在 <code>schedule_on_tick/tock()</code> 和
+  <code>onslot_csg_add_new_queue()</code> 内部，属于 MCU/固件协议层，这一版先不继续下钻。</div>
+
+  <!-- ===================== SET_FLAGS ===================== -->
+  <h2 id="set-flags">⑩ <code>KBASE_IOCTL_SET_FLAGS</code>（P1）</h2>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  F0["kbase_ioctl()<br/><small>core_linux.c:2159（setup 阶段那个 switch）</small>"]
+  F1["case SET_FLAGS<br/><small>:1873</small>"]
+  F2["kbase_api_set_flags()<br/><small>core_linux.c:862</small>"]
+  F0 --> F1 --> F2
+  F2 --> F3{"create_flags 合法？<br/><small>:869</small>"}
+  F3 -->|"否"| F4["return -EINVAL"]
+  F3 -->|"是"| F5{"支持 system_monitor API？<br/><small>:875</small>"}
+  F5 -->|"是（现代路径）"| F6["kbase_file_create_kctx()<br/><small>:876</small>"]
+  F5 -->|"否（兼容路径）"| F7["get_kctx_if_setup_complete()<br/><small>:886</small>"]
+  F7 -->|"JM：清 KCTX_SUBMIT_DISABLED"| F8["mutex+spinlock 下改 kctx flag<br/><small>:896-904</small>"]
+
+  F6 --> C1["kbase_create_context()<br/><small>context/backend/mali_kbase_context_jm.c:169</small>"]
+  C1 --> C2["vzalloc kbase_context<br/><small>:185</small>"]
+  C2 --> C3["for i in context_init[]：逐个调用 init()<br/><small>:201-205，任一失败则回滚已初始化的项</small>"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class F0,F1 entry; class F2,F6,C1,C3 key;
+  </div>
+
+  <h3 id="context-init">⑩-A <code>context_init[]</code> 初始化表（蓝，来自上图 C3）</h3>
+  <div class="card">
+    <p>这是 r48p0 里 JM 变体（<code>context/backend/mali_kbase_context_jm.c:127</code>）实际的初始化顺序表，
+    按数组顺序执行，CSF 变体（<code>_context_csf.c</code>）大同小异（用 <code>kbase_csf_ctx_init</code> 替换 JM 相关几项）：</p>
+  </div>
+  <table>
+    <tr><th>#</th><th>init 函数</th><th>作用</th></tr>
+    <tr><td>1</td><td><code>kbase_context_common_init</code></td><td>公共字段、锁、链表初始化</td></tr>
+    <tr><td>2</td><td><code>kbase_context_mem_pool_group_init</code></td><td>内存池分组</td></tr>
+    <tr><td>3</td><td><code>kbase_mem_evictable_init</code></td><td>可回收内存链表</td></tr>
+    <tr><td>4</td><td><code>kbase_ctx_sched_init_ctx</code></td><td>context 调度器登记</td></tr>
+    <tr><td>5</td><td><code>kbase_context_mmu_init</code></td><td>MMU/页表初始化</td></tr>
+    <tr><td>6</td><td><code>kbase_context_mem_alloc_page</code></td><td>预分配一页内核用内存</td></tr>
+    <tr><td>7</td><td><code>kbase_region_tracker_init</code></td><td>VA zone / region rbtree（对应 ⑧-A 用到的 zone）</td></tr>
+    <tr><td>8</td><td><code>kbase_sticky_resource_init</code></td><td>STICKY_RESOURCE_MAP 用的追踪表</td></tr>
+    <tr><td>9</td><td><code>kbase_jit_init</code></td><td>JIT（Just-In-Time）内存</td></tr>
+    <tr><td>10</td><td><code>kbase_context_kbase_kinstr_jm_init</code></td><td>JM 作业耗时统计（仅 JM）</td></tr>
+    <tr><td>11</td><td><code>kbase_context_kbase_timer_setup</code></td><td>定时器</td></tr>
+    <tr><td>12</td><td><code>kbase_event_init</code></td><td>用户态事件队列（<code>kbase_event_post</code> 用到，见 ⑦）</td></tr>
+    <tr><td>13</td><td><code>kbasep_js_kctx_init</code></td><td>作业调度器 kctx 状态（仅 JM）</td></tr>
+    <tr><td>14</td><td><code>kbase_jd_init</code></td><td>Job Dispatch atoms 数组（仅 JM，即 ①②③ 用到的 <code>jctx</code>）</td></tr>
+    <tr><td>15</td><td><code>kbase_context_submit_check</code></td><td>放行 submit</td></tr>
+    <tr><td>16</td><td><code>kbasep_platform_context_init</code></td><td>平台回调</td></tr>
+    <tr><td>17</td><td><code>kbase_context_add_to_dev_list</code></td><td>挂入设备的 kctx 链表</td></tr>
+  </table>
+
+  <!-- ===================== CS_QUEUE_GROUP_CREATE ===================== -->
+  <h2 id="cs-group">⑪ <code>KBASE_IOCTL_CS_QUEUE_GROUP_CREATE</code>（CSF，P1）</h2>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  G0["kbase_ioctl()"] --> G1["case CS_QUEUE_GROUP_CREATE(_1_6/_1_18)<br/><small>core_linux.c:2072/2077/2082</small>"]
+  G1 --> G2["kbasep_cs_queue_group_create()<br/><small>core_linux.c:1598</small>"]
+  G2 --> G3["kbase_csf_queue_group_create()<br/><small>csf/mali_kbase_csf.c:1288</small>"]
+  G3 --> G4{"tiler/fragment/compute_max &le; hweight64(mask)？<br/><small>:1306</small>"}
+  G4 -->|"否"| G5["err = -EINVAL"]
+  G4 -->|"是"| G6{"priority 越界？<br/><small>:1310</small>"}
+  G6 -->|"是"| G5
+  G6 -->|"否"| G7["iface_has_enough_streams(cs_min)？<br/><small>:1314</small>"]
+  G7 -->|"否"| G5
+  G7 -->|"是"| G8["csi_handlers / DVS buf 校验<br/><small>:1317-1329</small>"]
+  G8 -->|"不合法"| G5
+  G8 -->|"合法"| G9["create_queue_group()<br/><small>:1338 / 定义于 :1191</small>"]
+  G9 --> G10["find_free_group_handle()<br/><small>:1194</small>"]
+  G10 --> G11["kmalloc kbase_queue_group<br/><small>:1200</small>"]
+  G11 --> G12["填 tiler/fragment/compute mask、priority、group_uid<br/><small>:1213-1250</small>"]
+  G12 --> G13["create_suspend_buffers()<br/><small>:1257，分配 normal suspend buffer</small>"]
+  G13 -->|"失败"| G14["kfree(group)，return err"]
+  G13 -->|"成功"| G15["挂入 kctx-&gt;csf.queue_groups[handle]<br/><small>:1265，return group_handle</small>"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class G0,G1 entry; class G3,G9,G13 key;
+  </div>
+
+  <!-- ===================== REGISTER / BIND ===================== -->
+  <h2 id="cs-reg-bind">⑫ <code>CS_QUEUE_REGISTER</code> / <code>CS_QUEUE_BIND</code>（CSF，P1）</h2>
+  <h3>⑫-A REGISTER</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  R0["kbase_ioctl()"] --> R1["CS_QUEUE_REGISTER / REGISTER_EX<br/><small>core_linux.c:2052/2056</small>"]
+  R1 --> R2["kbasep_cs_queue_register(_ex)()<br/><small>core_linux.c:1492</small>"]
+  R2 --> R3["csf_queue_register_internal()<br/><small>csf/mali_kbase_csf.c:428</small>"]
+  R3 --> R4{"queue 已存在？find_queue()<br/><small>:462</small>"}
+  R4 -->|"是"| R5["return -EINVAL"]
+  R4 -->|"否"| R6["find_region_enclosing_address(buffer_gpu_addr)<br/><small>:469</small>"]
+  R6 --> R7{"region 有效 且 NATIVE 类型？<br/><small>:471</small>"}
+  R7 -->|"否"| R8["return -ENOENT"]
+  R7 -->|"是"| R9{"REGISTER_EX 且 cs_trace 开启？<br/><small>:485</small>"}
+  R9 -->|"是"| R10["校验 ex_buffer/ex_offset 对应 region<br/><small>:486-507</small>"]
+  R9 -->|"否"| R11
+  R10 --> R11["kzalloc kbase_queue<br/><small>:510</small>"]
+  R11 --> R12["填 base_addr/size/priority，region-&gt;user_data=queue<br/><small>:517-546</small>"]
+  R12 --> R13["加入 kctx-&gt;csf.queue_list<br/><small>:544</small>"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class R0,R1 entry; class R3,R11 key;
+  </div>
+  <h3>⑫-B BIND</h3>
+  <div class="mermaid">
+%%{init: {"theme": "dark", "flowchart": {"htmlLabels": true, "curve": "basis", "nodeSpacing": 22, "rankSpacing": 36, "useMaxWidth": true}}}%%
+flowchart TD
+  B0["kbase_ioctl()"] --> B1["case CS_QUEUE_BIND<br/><small>core_linux.c:2064</small>"]
+  B1 --> B2["kbasep_cs_queue_bind()<br/><small>core_linux.c:1516</small>"]
+  B2 --> B3["kbase_csf_queue_bind()<br/><small>csf/mali_kbase_csf.c:687</small>"]
+  B3 --> B4["find_queue_group(handle) + find_queue(addr)<br/><small>:696-697</small>"]
+  B4 --> B5{"都存在？"}
+  B5 -->|"否"| B6["goto out：return -EINVAL"]
+  B5 -->|"是"| B7{"csi_index 越界 / group 已终止 /<br/>queue 已绑定？<br/><small>:707-714</small>"}
+  B7 -->|"是"| B6
+  B7 -->|"否"| B8["get_user_pages_mmap_handle()<br/><small>:716，为 doorbell/IO 页分配 mmap handle</small>"]
+  B8 -->|"失败"| B6
+  B8 -->|"成功"| B9["group-&gt;bound_queues[csi]=queue<br/>queue-&gt;group=group / bind_state=IN_PROGRESS<br/><small>:721-725</small>"]
+  B9 --> B10["返回 mmap_handle 给用户态<br/><small>:720</small>"]
+
+  classDef entry fill:#422006,stroke:#fbbf24,color:#fde68a,stroke-width:2px;
+  classDef key fill:#0f172a,stroke:#38bdf8,color:#e0f2fe;
+  class B0,B1 entry; class B3,B8 key;
+  </div>
+
+  <div class="card" style="margin-top:40px;">
+    <p><strong>这只是一个样例：</strong>目前只手工核对了 <code>JOB_SUBMIT</code>（JM）这一条 IOCTL 路径三层展开。
+    如果这个格式和粒度可以，我可以按同样方式把其余 P0/P1 IOCTL（<code>MEM_ALLOC</code>、<code>CS_QUEUE_KICK</code> 等，
+    参照 <code>gpu_graph/ioctl-call-hierarchy.html</code> 里已经画过的目录）在新驱动树 <code>r48p0</code> 上重新核对一遍，
+    汇总成一份完整页面；也可以换成你更关心的其他函数作为样例入口。</p>
+    <p class="note">数据来源：人工阅读 <code>/Users/mazhenli/code/gpu/midgard/mali_kbase_jd.c</code>、
+    <code>mali_kbase_core_linux.c</code> 源码得到的调用关系，未接入 graphify 的自动化解析管线（该管线脚本本身不在
+    已连接目录 <code>gpu/graphify/gpu_graph</code> 内，只能看到它之前跑出的产物）。</p>
+  </div>
+</div>
+<script>
+  mermaid.initialize({ startOnLoad: false, securityLevel: 'loose', theme: 'dark' });
+  mermaid.run({ querySelector: '.mermaid' });
+</script>
+</body>
+</html>
