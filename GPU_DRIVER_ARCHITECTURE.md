@@ -15,8 +15,11 @@
 | kbase 整体长什么样、模块怎么分、JM/CSF 是什么关系 | 第 1、2 章 |
 | 一个对象（设备 / 上下文 / 内存区域 / 作业）从生到死经历了什么 | 第 3、4、6、9、10 章 |
 | 一次 ioctl / 一次中断 / 一次掉电 / 一次复位到底走了哪些函数、在哪里排队、在哪里等 | 第 5、7、8、11 章及第 15 章"关键路径串讲" |
+| mem pool 是每 kctx 私有还是全机共享；page fault 补页从哪拿 | 第 6.2、7.3 节 |
+| page fault 与 bus fault 有何不同 | 第 7.3 节 |
 | 出了问题去哪儿看（debugfs、sysfs、trace、计数器） | 第 12 章 |
 | 多线程为什么不会踩坏数据（锁与工作队列） | 第 14 章 |
+| `gpu_memory` 比进程 profile 高、甚至约 2 倍怎么回事 | 第 16 章 |
 
 几个贯穿全文的约定：
 
@@ -291,7 +294,14 @@ flowchart LR
 
 `kbase_open()`（`core_linux.c:783-820`）：按 minor 找 kbdev → **`kbase_device_firmware_init_once()`** → `kbase_file_new()`（`setup_state = KBASE_FILE_NEED_VSN`，`owner = current->files`）→ `filp->private_data = kfile`。
 
-`kbase_device_firmware_init_once()` 是"为 Android GKI 把重活从 probe 挪到第一次 open"的钩子（`device_csf.c:471-500`）：在 `fw_load_lock` 下，如果 `!csf.firmware_inited`：`kbase_pm_context_active` → `kbase_csf_firmware_load_init()`（加载 `mali_csffw.bin`、建 MCU 页表、启动 MCU、全局初始化）→ 成功后 `mcu_state = KBASE_MCU_ON`、`firmware_inited = true` → `kbase_device_hwcnt_csf_deferred_init()`（`hwcnt_backend_csf_metadata_init` → `virtualizer_init` → `kinstr_prfcnt_init`）→ CSF debugfs → `kbase_pm_context_idle`。JM 版本（`device_jm.c:325-340`）在同一钩子里加载 dummy job workaround 固件 `kbase_dummy_job_wa_load()`。
+`kbase_device_firmware_init_once()` 是"为 Android GKI 把重活从 probe 挪到第一次 open"的钩子。**两边都会在 open 时调用同一入口，但只有 CSF 会加载 MCU 固件**：
+
+| 编译后端 | 实现 | 加载什么 |
+|----------|------|----------|
+| **CSF**（`device_csf.c:471-500`） | 若 `!firmware_inited`：`pm_context_active` → `kbase_csf_firmware_load_init()` → `mcu_state=ON`、`firmware_inited=true` → hwcnt CSF deferred init → debugfs → `pm_context_idle` | **`mali_csffw.bin`（MCU 固件）**；同设备后续 open 因 `firmware_inited` 直接跳过 |
+| **JM**（`device_jm.c:325-340`） | 若需则 `kbase_dummy_job_wa_load()` | 仅 **dummy job 勘误固件**（`BASE_HW_ISSUE_TTRX_3485`），**没有 MCU、没有 `mali_csffw.bin`** |
+
+probe 阶段 CSF 的 `csf_early_init` 只准备 scheduler 等，**不**加载 MCU 固件。
 
 `kbase_file` 的 `setup_state` 状态机（`mali_kbase_defs.h:1400-1407`，全部用 `atomic_cmpxchg` 推进）：
 
@@ -552,19 +562,67 @@ flowchart LR
 ```
 
 - **GPU VA zone**（`enum kbase_memory_zone`，`mali_kbase_reg_track.h:141-156`）：`SAME_VA_ZONE`、`CUSTOM_VA_ZONE`、`EXEC_VA_ZONE`；CSF 另有 `EXEC_FIXED_VA_ZONE`、`FIXED_VA_ZONE`（用户指定固定地址）和设备级 `MCU_SHARED_ZONE`。每个 zone 是一个 `kbase_reg_zone`：`base_pfn`、`va_size_pages`、独立 `reg_rbtree`。
+
+#### Zone 是共存的，不是 n 选 1
+
+每个 `kbase_context` 有数组 `kctx->reg_zone[CONTEXT_ZONE_MAX]`：各 zone 占 **GPU VA 上互不重叠的一段**，各自一棵 rbtree，在 `kbase_region_tracker_init` 时一并建好（个别可能暂时为空，见下）。一次 `MEM_ALLOC` 按 flags **落入其中一个** zone，其它 zone 仍在、可继续分配。debugfs `mem_zones` 会列出每个 zone 的 `base_pfn` / 大小。
+
+不是运行时“只开 SAME_VA 或只开 CUSTOM_VA”这种配置开关；`MCU_SHARED` 在设备级（`kbdev->csf.mcu_shared_zone`），与 per-context zone 并存。
+
+#### 各 zone 如何划界
+
 - **`kbase_region_tracker_init`**（`mali_kbase_reg_track.c:961`，由 `zones_init[]` 表 `:945-958` 驱动）在 SET_FLAGS 时划 zone：
-  - `SAME_VA`：`base_pfn=1`，大小 `(1<<same_va_bits)/PAGE_SIZE - 1`（`:759-787`）；64 位进程默认 `KCTX_FORCE_SAME_VA`，即 GPU VA 与 CPU mmap 地址相同。
-  - `CUSTOM_VA`：仅 32 位（compat）进程，从 4GB 起（`KBASE_REG_ZONE_CUSTOM_VA_BASE`），大小 CSF `(1<<43)-4GB` / JM `(1<<44)-4GB`（`:796-831`）。
+  - `SAME_VA`：`base_pfn=1`，大小见下节（`:759-787`）；64 位进程默认 `KCTX_FORCE_SAME_VA`，即 GPU VA 与 CPU mmap 地址相同。
+  - `CUSTOM_VA`：compat（32 位）进程从 4GB 起（`KBASE_REG_ZONE_CUSTOM_VA_BASE`），大小 CSF `(1<<43)-4GB` / JM `(1<<44)-4GB`（`:796-831`）；纯 64 位初始可不建有效 CUSTOM_VA（`custom_va_init` 直接 return 0），直到 JIT 从 SAME_VA 尾部切出。
   - `EXEC_VA`：JM 下初始为空（`base=U64_MAX`），由 `MEM_EXEC_INIT` → `kbase_region_tracker_init_exec`（`:1218`）按需切出；CSF 下固定在 `1<<47`（64 位）/ `1<<43`（32 位）处，4GB（`:840-871`）。
   - `EXEC_FIXED_VA` / `FIXED_VA`（CSF）：紧接 EXEC_VA 之后各 4GB / 至 `1<<48`（`:887-926`）。
-  - JIT 区：`MEM_JIT_INIT` → `kbase_region_tracker_init_jit`（`:1155-1216`）在 64 位进程下从 SAME_VA **尾部**切出（`init_jit_64`），32 位下复用 CUSTOM_VA。
+  - JIT 区：`MEM_JIT_INIT` → `kbase_region_tracker_init_jit`（`:1155-1216`）在 64 位下从 SAME_VA **尾部**切出（`init_jit_64`），32 位下复用 CUSTOM_VA。
 - **选 zone**（`kbase_mem_alloc`，`mali_kbase_mem_linux.c:365-382`）：`BASE_MEM_SAME_VA` → SAME_VA；CSF 且 `FIXED|FIXABLE` → 有 `PROT_GPU_EX` 则 EXEC_FIXED_VA 否则 FIXED_VA；`PROT_GPU_EX` 且已有 exec zone → EXEC_VA；否则 CUSTOM_VA。
 - **region API**：`kbase_alloc_free_region(zone, start_pfn, nr_pages)`（`:1347-1386`，从 `zone->cache` 分配，初始 `flags = zone_bits | KBASE_REG_FREE | KBASE_REG_GROWABLE`）；`kbase_add_va_region`（`:551-598`）→ `kbase_add_va_region_rbtree`（指定地址则找到 enclosing free region 拆分插入，否则走 free 链表找地址；CUSTOM_VA 内存不足时先 `kbase_jit_evict` 再重试）；`kbase_remove_va_region`（`:345`）；`kbase_region_tracker_find_region_enclosing_address / base_address`（`:216-269`，`gpu_addr>>PAGE_SHIFT` 定位 zone 后二分）。
 - **`KBASE_REG_*` flags**（`mali_kbase_mem.h:71-261`）：`FREE`、`CPU_WR/RD`、`GPU_WR/RD/NX`、`CPU_CACHED/GPU_CACHED`、`GROWABLE`、`PF_GROW`（缺页可增长）、`GPU_VA_SAME_4GB_PAGE`、`SHARE_IN/SHARE_BOTH`（一致性域）、`MEMATTR_MASK`（3 位 memattr 索引）、`PROTECTED`、`DONT_NEED`（在 evict 链表上）、`IMPORT_PAD`、`CSF_EVENT`、`TILER_ALIGN_TOP`（JM）、`PERMANENT_KERNEL_MAPPING`、`VA_FREED`、`HEAP_INFO_IS_SIZE`、`ACTIVE_JIT_ALLOC`、`FIXED_ADDRESS`（CSF）。bit11-13 编码 zone。
 
-### 6.2 页池：三级 fallback
+#### 64 位上主要走 SAME_VA，区有多大
 
-`kbase_mem_pool_group`（`mali_kbase_defs.h:564-567`）= `small[MEMORY_GROUP_MANAGER_NR_GROUPS]` + `large[...]`，按 memory group id 索引；kctx 一组、kbdev 一组，kctx 池的 `next_pool` 指向 kbdev 池（`mali_kbase_mem_pool_group.c:42-81`）。上限 `KBASE_MEM_POOL_MAX_SIZE_KCTX/KBDEV = 64MB`（`mali_kbase_mem.h:966,971`）。
+创建 context 时设 `KCTX_FORCE_SAME_VA`；ioctl 对普通分配强制 `BASE_MEM_SAME_VA`（`core_linux.c:1005-1013`：64 位强制到约 `2⁴⁷−1` 以下；可执行与 FIXED/FIXABLE 除外，进 EXEC / FIXED 区）。物理页仍走页池，只是 GPU VA（及后续 mmap 的 CPU VA）落在 SAME_VA。
+
+SAME_VA 容量公式（`kbase_reg_zone_same_va_init`，`:759-787`）：
+
+```text
+same_va_bits = min(CPU_VA位数, GPU_MMU.va_bits)
+base_pfn = 1          // 第 0 页保留
+nr_pages = (1 << (same_va_bits - PAGE_SHIFT)) - 1
+CSF：若越过 EXEC_VA 起点 (1<<47)，则 nr_pages 截到 (1<<47)/PAGE_SIZE - 1
+```
+
+| 情况 | SAME_VA 大约上限（**虚拟地址**容量，非物理） |
+|------|-----------------------------------------------|
+| CSF，且 CPU/GPU VA ≥ 47 bit | 约 **2⁴⁷ − 4KB ≈ 128 TiB**（被 EXEC 卡住） |
+| 更小 VA（如 ARM64 常见 39 bit） | 约 **2³⁹ − 4KB ≈ 512 GiB** |
+| 做过 `MEM_JIT_INIT` | 再减去切给 JIT 的 `jit_va_pages` |
+
+Zone 大小只是 VA 预算；一次分配实际物理页由 `commit_pages` 决定（见 6.3），还受页池与系统内存约束。
+
+### 6.2 页池：两级归属 + 三级 fallback
+
+#### 谁有 mem pool？共享还是私有？
+
+**两级都有，不是「全机一个池」，也不是「各 kctx 完全隔离」。**
+
+| 层级 | 位置 | 归属 |
+|---|---|---|
+| **kctx 私有** | `kctx->mem_pools`（`small[]` + `large[]`，按 `group_id`） | **每个** `kbase_context` 独立一套；context 创建时 `kbase_context_mem_pool_group_init`，销毁时 `term` |
+| **设备共享** | `kbdev->mem_pools` | **所有** kctx 共用；probe 时建好 |
+
+`kbase_mem_pool_group`（`mali_kbase_defs.h:564-567`）= `small[MEMORY_GROUP_MANAGER_NR_GROUPS]` + `large[...]`。初始化（`mali_kbase_mem_pool_group.c:42-81`）把 kctx 池的 `next_pool` 指到同 `group_id` 的 kbdev 池：
+
+```text
+kctx.mem_pools.small[gid]  → next_pool →  kbdev.mem_pools.small[gid]
+kctx.mem_pools.large[gid]  → next_pool →  kbdev.mem_pools.large[gid]
+```
+
+上限 `KBASE_MEM_POOL_MAX_SIZE_KCTX/KBDEV = 64MB`（`mali_kbase_mem.h:966,971`）。
+
+#### 取页 / 还页顺序（三级 fallback）
 
 ```mermaid
 flowchart LR
@@ -587,7 +645,31 @@ flowchart LR
 
 页池有 shrinker（`kbase_mem_pool_init`，`mali_kbase_mem_pool.c:529-555`）：内存紧张时 `kbase_mem_pool_reclaim_scan_objects` 把空闲页还给内核。
 
-### 6.3 `MEM_ALLOC` 完整流程
+**与 `gpu_memory` 的关系**：页在池中空闲时**不**计入 `used_pages`；真正占用统计、以及 Infinite Cache 下 `cpu_alloc`/`gpu_alloc` 双计导致 `gpu_memory` 约 2× profile 的分析见 **第 16 章**。
+
+### 6.3 `MEM_ALLOC`、`commit_pages` 与物理页多少
+
+#### `va_pages` / `commit_pages` / `extension`
+
+`MEM_ALLOC` 与大小相关的三个用户参数：
+
+| 参数 | 含义 |
+|------|------|
+| **`va_pages`** | 要占的 **GPU 虚拟地址** 页数（region / “地皮”多大） |
+| **`commit_pages`** | 现在立刻申请多少 **物理页**（backing / “先盖几层”） |
+| **`extension`** | 可增长时，每次缺页/增长步进多少页 |
+
+必须满足 `0 ≤ commit_pages ≤ va_pages`（另有 `va_pages ≤ KBASE_MEM_ALLOC_MAX_SIZE` 等校验，`kbase_check_alloc_sizes`）。`kbase_alloc_phy_pages(reg, va_pages, commit_pages)`（`mali_kbase_mem.c:1875`）只为 `commit_pages` 从页池拿物理页，记入 `gpu_alloc->nents`，并设 `reg->initial_commit = commit_pages`。
+
+**物理页数量主要由谁决定（native 分配）**：
+
+1. **用户态 `MEM_ALLOC` 的 `commit_pages`（主因）**——驱动校验后按此数分配。常见：`commit == va` 一次全 backing；`commit < va` + `BASE_MEM_GROW_ON_GPF` 先少后多；若配置要求 GPF 全 backing，驱动会把 `commit_pages` 改成 `va_pages`。
+2. **之后可变**：`MEM_COMMIT` 主动增减已提交页；`GROW_ON_GPF` + MMU page fault 时按 `extension` 补页，总量仍 ≤ `va_pages`。当前物理页数约等于 `alloc->nents`。
+3. **不走 `commit_pages` 的路径**：dma-buf import（UMM）用对方已有页；user buffer import pin 用户页；alias 复用已有 region；JIT 有自己的 va/commit 与压力上限。
+
+Zone / SAME_VA 大小只限制 VA 预算，**不等于**已经申请了多少物理页；物理还受页池、MGM、系统内存约束。
+
+#### `MEM_ALLOC` 完整流程
 
 `kbase_api_mem_alloc_ex`（CSF；`core_linux.c:951-1041`）/ `kbase_api_mem_alloc`（JM，转调 `_ex`）先处理 FIXED/FIXABLE 互斥计数、64 位非 compat 强制 `SAME_VA`、CSF event 内存强制 `SAME_VA|CACHED_CPU|COHERENT_SYSTEM`，然后进入 `kbase_mem_alloc()`（`mali_kbase_mem_linux.c:297-500`）：
 
@@ -606,7 +688,7 @@ flowchart TD
   J -.->|用户随后 mmap(cookie)| L["kbase_context_mmap → kbasep_reg_mmap<br/>取 pending_regions[cookie]<br/>kbase_gpu_mmap 到 vma->vm_start（GPU VA == CPU VA）<br/>归还 cookie；kbase_cpu_mmap 建 CPU 侧"]
 ```
 
-为什么 SAME_VA 要"先 cookie 后 mmap"：GPU VA 要等于 CPU VA，而 CPU VA 只有在 `mmap()` 时由内核 `get_unmapped_area` 决定（`kbase_context_get_unmapped_area`，`thirdparty/mali_kbase_mmap.c:407`，会按 2MB / GPU PC 位数 / 4GB 边界对齐），所以 ioctl 阶段只能先把 region 挂起来。
+为什么 SAME_VA 要"先 cookie 后 mmap"：GPU VA 要等于 CPU VA，而 CPU VA 只有在 `mmap()` 时由内核 `get_unmapped_area` 决定（`kbase_context_get_unmapped_area`，`thirdparty/mali_kbase_mmap.c:407`，会按 2MB / GPU PC 位数 / 4GB 边界对齐），所以 ioctl 阶段只能先把 region 挂起来。SAME_VA 下物理页常在 alloc 时已按 `commit_pages` 备好，只是 GPU PTE 可能等到 mmap 才写。
 
 `kbase_gpu_mmap`（`mali_kbase_mem.c:315`）：ALIAS 类型走 `kbase_mmu_insert_aliased_pages`，否则 `kbase_mmu_insert_pages(_skip_status_update)`，然后 `kbase_add_va_region` 入 rbtree。
 
@@ -729,18 +811,41 @@ flowchart TD
   Q -->|Permission / Transtab bus / Access flag / protected| R["kbase_mmu_report_fault_and_kill"]
   Q -->|Translation fault| S["找 region；必须 KBASE_REG_PF_GROW 且 fault addr 在 region 内"]
   S --> T["current_backed_size = kbase_reg_current_backed_size(region)<br/>new_pages = reg_grow_calc_extra_pages(...) 按 extension 算增量"]
-  T --> U["page_fault_try_alloc（mmu.c:759-906）：从 kctx 页池拿页"]
+  T --> U["page_fault_try_alloc（mmu.c:759-906）：从 mem_pools 拿页"]
   U -->|成功| V["kbase_mmu_insert_pages_no_flush 写 PTE<br/>kbase_mmu_hw_do_operation UNLOCK（硬件自动 replay 该访问）"]
   U -->|池不够| W["kbase_mem_pool_grow 后重试（mmu.c:1392-1407）"]
   U -->|彻底失败| R
   R --> R2["JM: kbasep_js_clear_submit_allowed + kbase_backend_jm_kill_running_jobs_from_kctx<br/>+ kbase_mmu_disable(kctx) 切 UNMAPPED（mmu_jm.c:94-166）<br/>CSF: kbase_csf_ctx_handle_fault → 该 kctx 所有 group 标 FATAL 并 terminate（csf.c:1714-1763）"]
 ```
 
-要点：
+#### Page fault 与 bus fault 分别是什么
+
+| | **Page fault** | **Bus fault** |
+|---|---|---|
+| 含义 | **虚地址翻译失败**：无映射、权限不对、或可增长 region 尚未 commit 物理页 | 翻译已完成（或正在读页表），访问 **物理地址** 时总线/内存子系统报错 |
+| 常见原因 | 未映射、`GROW_ON_GPF`、权限 | 坏物理页、页表页已释放、错误 PA、内存控制器/互联错误 |
+| IRQ 位图 | `MMU IRQ_STATUS` **低 16 位**（按 AS） | **高 16 位**（按 AS） |
+| 驱动路径 | `work_pagefault` → 对 `PF_GROW` 可补页后 `UNLOCK` 重放 | `work_busfault` → `kbase_gpu_report_bus_fault_and_kill`（**基本不可恢复**） |
+
+另有 **`TRANSTAB_BUS_FAULT`**：MMU **走页表**时读某级 PGD/PTE 物理页就总线出错。它挂在 page-fault 状态里，但 page fault worker 同样当致命错误走 `report_fault_and_kill`，不会补页。
+
+直观记：**page fault ≈ 映射问题（有时能修）**；**bus fault ≈ 物理访问/总线问题（当致命故障）**。
+
+#### `page_fault_try_alloc`：从哪里拿页？
+
+流程图里的「从 kctx 页池拿页」就是从 **`kctx->mem_pools`（及 `next_pool` 链上的 `kbdev->mem_pools`）** 拿，没有另一套池。`page_fault_try_alloc`（`mmu.c:759-906`）要点：
+
+1. 按 region 的 `group_id` 选 `mem_pools.large[gid]` 或 `small[gid]`；若 `cpu_alloc != gpu_alloc`（Infinite Cache 分离），所需页数先 `×2`。
+2. 沿 `pool->next_pool` 用 `kbase_alloc_phy_pages_helper_locked` 从池空闲链表抠页，写入 `gpu_alloc`（分离时还有 `cpu_alloc`）。
+3. **本函数只吃池里已有的空闲页**：`estimate_pool_space_required` 发现不够则设 `*pages_to_grow` 并返回 false，由 page fault worker 再 `kbase_mem_pool_grow`（向 buddy/`alloc_pages` 补池）后重试——不会在本函数里直接打 buddy。
+
+池的两级归属见 **6.2**。
+
+#### 其它要点
 
 - 每个 AS 一个 `pf_wq`（`kbase_as.pf_wq`），page fault 与 bus fault 各一个 `work_struct`；`kbase_fault pf_data/bf_data` 记录 `addr / status / protected_mode`。fault 处理都在**进程上下文的 workqueue** 里做，因为要分配内存、拿 mutex。
 - 只有 `KBASE_REG_PF_GROW` 的 region 才补页——这就是 growable tmem / JIT / CSF tiler heap 之外的"按需增长"基础。补页时用 `_no_flush` 版本插页表，因为 `UNLOCK` 命令会让 MMU 重放触发 fault 的访问，不需要额外 flush。
-- Kill 策略后端不同：JM 只杀"正在跑的这个 kctx 的 job"并禁 AS，kctx 本身还能继续提交；CSF 则把该 kctx 的所有 queue group 标为 fatal error 并 terminate，用户态收到 `BASE_GPU_QUEUE_GROUP_ERROR_FATAL` 后自行重建。
+- Kill 策略后端不同：JM 只杀"正在跑的这个 kctx 的 job"并禁 AS，kctx 本身还能继续提交；CSF 则把该 kctx 的所有 queue group 标为 fatal error 并 terminate，用户态收到 `BASE_GPU_QUEUE_GROUP_ERROR_FATAL` 后自行重建。bus fault 走 `kbase_mmu_bus_fault_worker`（`mmu.c:3961`）→ `kbase_gpu_report_bus_fault_and_kill`，同样按后端杀作业/组。
 - `KCTX_PAGE_FAULT_REPORT_SKIP` 用于进程退出期间抑制误报；`KCTX_AS_DISABLED_ON_FAULT` 让 ctx_sched 在 refcount 归零时彻底解绑 AS。
 
 ### 7.4 锁
@@ -874,7 +979,7 @@ JM 的核心抽象是 **atom**：用户态把一个 job chain 的 GPU 地址（`
 - `kbasep_js_device_data`（`jm/mali_kbase_js_defs.h:295-365`，`kbdev->js_data`）：`runpool_irq`（`submit_allowed` 位图、`ctx_attr_ref_count[]`、`slot_affinities[]`；`hwaccess_lock` 保护）、`schedule_sem`、`ctx_list_pullable[3][prio] / ctx_list_unpullable[3][prio]`、`nr_user/all_contexts_running`、`js_reqs[3]`、`scheduling_period_ns`（默认 100ms）、`soft_stop_ticks(_cl)`（1）、`hard_stop_ticks_ss/cl/dumping`（50/50/15000）、`gpu_reset_ticks_ss/cl/dumping`（55/55/15020）、`queue_mutex`、`runpool_mutex`。
 - `kbasep_js_kctx_info`（`:394-404`，`kctx->jctx.sched_info`）：`jsctx_mutex`、`nr_jobs`、`ctx_attr_ref_count[]`、`is_scheduled_wait`、`ctx_list_entry[3]`。
 - `jsctx_queue`（`kctx->jsctx_queue[prio][slot]`）：`runnable_tree`（rbtree，按 age 排）+ `x_dep_head`。
-- `slot_rb`（`backend/gpu/mali_kbase_defs.h:71-80`）：`entries[SLOT_RB_SIZE=2]`、`read_idx/write_idx`、`last_kctx_tagged`（判断是否需要 flush L1）、`job_chain_flag`——**每个 job slot 最多 2 个 atom 在硬件侧排队**（`JS_HEAD` 当前 + `JS_HEAD_NEXT` 下一个），这就是 GPU 能"背靠背"跑 job 的机制。
+- `slot_rb`（`backend/gpu/mali_kbase_defs.h:71-80`）：即下文的 **HW access ringbuffer**；`entries[SLOT_RB_SIZE=2]`、`read_idx/write_idx`、`last_kctx_tagged`（判断是否需要 flush L1）、`job_chain_flag`。详见 9.3。
 
 ### 9.2 提交：`JOB_SUBMIT` → 上槽
 
@@ -907,7 +1012,72 @@ flowchart TD
 
 `kbase_js_sched` 决定"哪个 kctx 上哪个 AS"时用的是 `ctx_list_pullable[slot][prio]` 的 FIFO 顺序 + `js_ctx_scheduling_mode`（`KBASE_JS_SYSTEM_PRIORITY_MODE`：跨进程按 atom 优先级抢占；`PROCESS_LOCAL_PRIORITY_MODE`：只在同进程内按优先级），AS 不够时 `kbase_backend_find_and_release_free_address_space`（`jm_as.c:121-205`）去抢一个 refcount==1 的非特权 kctx 的 AS。
 
-### 9.3 后端 ringbuffer 状态机与硬件提交
+### 9.3 HW ringbuffer 与硬件提交
+
+#### 它是什么
+
+**HW ringbuffer**（代码注释里的 *HW access ringbuffer* / *slot ringbuffer*）是 JM 驱动对每个 Job Slot 硬件双缓冲的**软件镜像**，不是 CSF 那套大块命令内存环，也不是 ktrace / HWCNT 的 ring buffer。
+
+Mali JM 每个 Job Slot 硬件上只能同时挂 **2 个 job**：
+
+| 软件索引 `idx` | 硬件寄存器 | 含义 |
+|----------------|------------|------|
+| `0` | `JS_HEAD` | 正在跑 |
+| `1` | `JS_HEAD_NEXT` | 已装好，等 HEAD 跑完自动接上 |
+
+驱动在 `kbdev->hwaccess.backend.slot_rb[js]` 维护深度固定为 2 的环，跟踪这两个位置上的 `kbase_jd_atom`：
+
+```c
+/* backend/gpu/mali_kbase_defs.h */
+#define SLOT_RB_SIZE 2
+#define SLOT_RB_MASK (SLOT_RB_SIZE - 1)
+
+struct slot_rb {
+	struct rb_entry entries[SLOT_RB_SIZE];
+	u64 last_kctx_tagged;
+	u8 read_idx, write_idx;
+	u8 job_chain_flag;
+};
+```
+
+`kbase_gpu_inspect(kbdev, js, idx)`（`mali_kbase_jm_rb.h`）约定：`idx==0` 是正在跑的，`idx==1` 是在等的；其它值无效。`kinstr_jm` 里还有 `BUILD_BUG_ON(SLOT_RB_SIZE != 2)`，说明深度与硬件 HEAD/HEAD_NEXT 绑定，不能改。
+
+在调度栈中的位置：
+
+```
+JOB_SUBMIT
+  → jd / js（软件可跑队列，可很长）
+  → kbase_jm_kick / next_job / js_pull
+  → 【HW ringbuffer】每个 slot 最多 2 个 atom
+  → kbase_job_hw_submit() 写 HEAD_NEXT 等寄存器
+```
+
+入队 / 出队（`jm_rb.c`，须持 `hwaccess_lock`）：
+
+- `kbase_gpu_enqueue_atom`：写入 `entries[write_idx & SLOT_RB_MASK]`，`write_idx++`，状态置 `WAITING_BLOCKED`
+- `kbase_gpu_dequeue_atom`：从 `read_idx` 取出，`release_atom` 后 `read_idx++`，状态回 `NOT_IN_SLOT_RB`
+- 空/满：`SLOT_RB_EMPTY(rb)`（`write_idx == read_idx`）、`SLOT_RB_ENTRIES`（`write_idx - read_idx`，`s8` 差值）
+
+atom 进了 ringbuffer 之后，还要过一串 `gpu_rb_state` 才能真正写进硬件（见下节状态机）。HEAD（idx 0）失败时，会先 `kbase_gpu_irq_evict()` 从硬件清掉 HEAD_NEXT（idx 1），再在 `kbase_gpu_complete_hw()` 里从软件 rb dequeue——失败路径是「硬件踢出 → 软件出队」两步。
+
+| 文件 | 作用 |
+|------|------|
+| `backend/gpu/mali_kbase_defs.h` | `SLOT_RB_SIZE=2`、`struct slot_rb` |
+| `backend/gpu/mali_kbase_jm_rb.c` | enqueue/dequeue/inspect、状态推进、evict/complete |
+| `backend/gpu/mali_kbase_jm_rb.h` | `kbase_gpu_inspect` / `complete_hw` / `irq_evict` |
+| `backend/gpu/mali_kbase_jm_hw.c` | `kbase_job_hw_submit` 写 `HEAD_NEXT` |
+| `jm/mali_kbase_jm_defs.h` | `enum kbase_atom_gpu_rb_state` |
+
+别和这些 ring buffer 搞混：
+
+1. **CSF HWCNT ring buffer**（`KBASE_HWCNT_BACKEND_CSF_RING_BUFFER_COUNT=128`）— firmware 与驱动传硬件计数器样本
+2. **ktrace rbuf** — 调试用 trace 环
+3. **`jsctx_queue.runnable_tree`** — 红黑树（`rb_node`），不是 Job Slot 的 HW rb
+4. **CSF 用户态 CS buffer** — 命令流内存，由 MCU 拉流，与 JM slot rb 无关
+
+一句话：**HW ringbuffer = JM 每个 Job Slot 对应的 2 槽软件镜像，对齐硬件的 `JS_HEAD` / `JS_HEAD_NEXT`。**
+
+#### 状态机与提交
 
 `kbase_backend_slot_update()`（`jm_rb.c:861-1069`）对每个 slot 的两个 entry 按 `gpu_rb_state` 推进（`jm/mali_kbase_jm_defs.h:284-293`）：
 
@@ -999,10 +1169,78 @@ flowchart LR
   DB["DOORBELL 寄存器 × 24<br/>0 号给内核，其余分给 group/queue"] -->|kbase_csf_ring_doorbell| MCU
 ```
 
+#### MCU 固件是什么、为何 CSF 才能控制它
+
+**MCU** = GPU 芯片里那颗专用小处理器（Microcontroller），不是 SoC 上的应用大核。  
+**MCU 固件** = 跑在这颗 MCU 上的程序，发布物一般是 `mali_csffw.bin`（可由 DT `firmware-name` 或模块参数 `fw_name` 覆盖），由 kbase 在第一次 `open()` 时 `request_firmware()` 加载。
+
+在 CSF 架构里，它干的是 JM 时代内核干的一部分活：**从用户写好的 Command Stream 里拉命令、在组内调度、管 shader 上下电、处理 sync / tiler heap 等**。内核不再把一条条 job 写进 Job Slot，而是：
+
+1. 把固件镜像映射进 **MCU 自己的地址空间**（`MCU_AS_NR = 0`，`kbdev->csf.mcu_mmu`；用户 kctx 只能用 AS 1..15）
+2. 启动 MCU（写 `MCU_CONTROL=AUTO`）
+3. 之后通过 **共享内存页 + doorbell** 跟固件对话
+
+```
+用户态写 CS buffer ──门铃──► MCU 固件拉流执行
+                ▲
+内核 scheduler  │  共享页：GLB_REQ/ACK、CSG_REQ/ACK、CS_*
+                └── doorbell 0 号给内核，其余分给 queue
+```
+
+| | **JM** | **CSF** |
+|---|--------|---------|
+| 硬件作业入口 | Job Manager：最多 3 个 Job Slot（`JS_HEAD` / `JS_HEAD_NEXT`） | CSF：MCU + 最多 31 个 CSG slot |
+| 谁消费命令 | 内核把 atom 直接提交到槽 | **MCU 固件**消费 CS |
+| 有没有独立固件 | 无（或仅有 dummy job 勘误小固件） | 有完整 `mali_csffw.bin` |
+| 电源状态机 | L2 + Shader | L2 + **MCU**（+ 固件控 shader） |
+
+要点：
+
+1. **硬件上只有 CSF GPU 才有这颗可跑固件的 MCU / CSF 前端**。JM GPU 没有这套接口，驱动也就没有 `csf/firmware` 路径。
+2. **软件上由 `MALI_USE_CSF` 二选一编译**。开了 CSF，kbase 才会：占 AS0、建 `mcu_mmu`、加载固件、跑 MCU 电源状态机、用 `GLB_REQ` / doorbell 跟固件交互。
+3. **“控制”不是随意遥控任意代码**，而是按 Host–Firmware 契约操作：上电/重载、翻转共享页请求位再敲门铃、`HALT` / `SLEEP`、进 protected mode、改核掩码等。内核管的是 **生命周期 + 哪些 CSG 上槽**；组内命令怎么执行交给固件。
+
+一句话：**JM 里内核是调度员；CSF 里 MCU 固件是调度员，内核只负责装固件并把进程组放到 CSG slot 上。**
+
+#### 门铃（doorbell）是什么
+
+**doorbell 是一组硬件寄存器**：CPU（内核或用户态）往里面写一下，等于按一下门铃，**叫醒正在跑固件的 MCU**——“共享内存里有新请求 / 命令流有新活了，过来看”。
+
+它**不承载命令内容**。命令和请求写在共享页、CS ring buffer 里；门铃只负责发一个边沿信号。内核敲门铃本质是写寄存器 1：
+
+```c
+/* csf/mali_kbase_csf_firmware.c */
+void kbase_csf_ring_doorbell(struct kbase_device *kbdev, int doorbell_nr)
+{
+	kbase_reg_write32(kbdev, csf_doorbell_offset(doorbell_nr), (u32)1);
+}
+```
+
+MCU 不可能一直轮询所有共享页。约定是：Host 先改共享状态（翻 `GLB_REQ` / `CSG_REQ`，或更新 CS input 页的 insert）→ 再敲对应 doorbell → MCU 被唤醒后读共享区处理。
+
+硬件一共 **`CSF_NUM_DOORBELL = 24`** 个（`csf/mali_kbase_csf_firmware.h:58`）：
+
+| 编号 | 谁敲 | 干什么 |
+|------|------|--------|
+| **0**（`CSF_KERNEL_DOORBELL_NR`） | 内核 | 全局 / CSG 级请求：启动组、halt、sleep、改配置、ping… |
+| **1..23** | 分给已上槽的 group/queue（用户态经 mmap） | 告诉固件：“这条 CS 又有新命令了” |
+
+`kbase_csf_ring_csg_doorbell` / `ring_cs_kernel_doorbell` 通常先翻 `CSG_DB_REQ` / `CS_DB_REQ` 位再敲；用户态敲的是 `QUEUE_BIND` 后 mmap 出去的 doorbell 页（`queue->doorbell_nr`）。稳态下用户写完 CS → 写 doorbell 页即可，**往往不再走 ioctl**。
+
+和 **`CS_QUEUE_KICK`** 不要混：
+
+- **kick ioctl**：告诉**内核调度器**“这条 queue 有活了”，可能要把 CSG 抢上 slot
+- **doorbell**：告诉**MCU 固件**“去看共享页 / 命令流”
+
+组已在 slot 上时，用户往往只需敲门铃；组还不在 slot 上时，要先 kick（或调度器把组 program 上去），再靠门铃让固件真正开始消费。GPU sleep 时用户敲 doorbell 还会经 `DOORBELL_MIRROR` 变成 GPU 中断，用来唤醒睡着的 MCU / 电源路径。
+
+比喻：访客先把东西放门口（写共享内存），再按门铃（写 doorbell 寄存器）；主人（MCU）听到铃才开门看。门铃本身不是包裹。
+
+#### 加载与控制面细节
+
 - **加载**（`kbase_csf_firmware_load_init`，`firmware.c:2291-2412`，第一次 `open()` 时由 `kbase_device_firmware_init_once` 触发）：申请 MCU AS（`MCU_AS_NR=0`）→ `kbase_mmu_init(mcu_mmu)` → `request_firmware("mali_csffw.bin")`（模块参数 `fw_name`，DT 可用 `firmware-name` 覆盖）→ 校验 magic `0xC3F13A6E` 与版本 → 逐条 `load_firmware_entry`：`INTERFACE`（内存段：`parse_memory_setup_entry` 按 flags RD/WR/EX/CACHE/SHARED/ZERO/PROTECTED 分配页——`PROTECTED` 走 `kbase_csf_protected_memory_alloc`——拷入数据并插入 `mcu_mmu`）、`CONFIGURATION`（可调参数 → sysfs `firmware_config/`）、`TRACE_BUFFER`、`TIMELINE_METADATA`、`BUILD_INFO_METADATA`、`FUNC_CALL_LIST`、`CORE_DUMP` → `setup_shared_iface_static_region` → trace buffers init → 等 L2 上电 → `load_mmu_tables` → **`boot_csf_firmware`**（写 `MCU_CONTROL=AUTO`，等 `event_wait` 上 `interrupt_received`，超时 `CSF_FIRMWARE_BOOT_TIMEOUT`）→ `parse_capabilities`（读 GLB/CSG/CS 的 features、`group_num`、`stream_num`、`suspend_size`、`prfcnt_size`）→ doorbell 映射 → `kbase_csf_scheduler_init`（**建调度器内核线程**）→ dummy user reg 页 → timeout → **`global_init_on_boot`** → fw log / cfg / core dump。
 - **`global_init()`**（`:1744-1783`）：`enable_endpoints_global`（shader 核掩码）→ `set_shader_poweroff_timer` → `set_timeout_global`（progress timeout）→ `enable_gpu_idle_timer` → 写 `GLB_ACK_IRQ_MASK` → 敲内核 doorbell。此后 GLB 层的每次请求都是"翻 `GLB_REQ` 里对应位 → 敲 doorbell → 等 `GLB_ACK` 同位翻转"（`wait_for_global_request`，超时 `kbdev->csf.fw_timeout_ms`）。
-- **MCU 控制**：`kbase_csf_firmware_trigger_mcu_halt`（`GLB_REQ_HALT`，须无 on-slot CSG）、`disable_mcu`（`MCU_CONTROL=DISABLE`）、`enable_mcu`（`AUTO`，方便退出 protected mode 时自动重启）、`trigger_mcu_sleep / is_mcu_in_sleep`（`GLB_REQ_SLEEP`）、`ping_wait`（`GLB_REQ_PING`）、`kbase_csf_enter_protected_mode`（`GLB_REQ_PROTM_ENTER`）+ `wait_protected_mode_enter`（等 ACK 后再轮询 `GPU_STATUS.PROTECTED_MODE_ACTIVE`，失败则复位）。这些都由第 8 章 MCU 状态机和第 10.4 节调度器调用。
-- **doorbell**：`CSF_NUM_DOORBELL=24`，0 号 `CSF_KERNEL_DOORBELL_NR` 给内核；`kbase_csf_ring_csg_doorbell / ring_cs_kernel_doorbell` 先翻 `CSG_DB_REQ` / `CS_DB_REQ` 位再敲；用户态敲的是 mmap 出去的 doorbell 页（`kbase_csf_ring_cs_user_doorbell` 用 `queue->doorbell_nr`）。
+- **MCU 控制 API**：`kbase_csf_firmware_trigger_mcu_halt`（`GLB_REQ_HALT`，须无 on-slot CSG）、`disable_mcu`（`MCU_CONTROL=DISABLE`）、`enable_mcu`（`AUTO`，方便退出 protected mode 时自动重启）、`trigger_mcu_sleep / is_mcu_in_sleep`（`GLB_REQ_SLEEP`）、`ping_wait`（`GLB_REQ_PING`）、`kbase_csf_enter_protected_mode`（`GLB_REQ_PROTM_ENTER`）+ `wait_protected_mode_enter`（等 ACK 后再轮询 `GPU_STATUS.PROTECTED_MODE_ACTIVE`，失败则复位）。这些都由第 8 章 MCU 状态机和第 10.4 节调度器调用。
 - **no_mali**（`firmware_no_mali.c`）：8 CSG × 8 CSI 的内存内假固件，同名函数替身，让无 GPU 环境也能跑上层逻辑。
 
 ### 10.2 用户态视角：建组、建队列、绑定、kick
@@ -1249,7 +1487,7 @@ debugfs 根 `/sys/kernel/debug/mali0/`（`init_debugfs`，`core_linux.c:5075-519
 | `ctx/<…>/atoms`、`job_fault` | JM | atom 列表（`jd_debugfs.c`）；失败 atom 寄存器 dump（`debug_job_fault.c`） |
 | `ctx/<…>/{kcpu_queues, groups, tiler_heaps, cpu_queue, csf_sync}` | CSF | KCPU / CSG / tiler heap / CPU 队列 dump / sync 状态 |
 | `ctx/defaults/{infinite_cache, mem_pool_max_size, lp_mem_pool_max_size}` | 通用 | 新 kctx 默认值 |
-| `gpu_memory` | 通用 | 全局 GPU 内存统计（`gpu_memory_debugfs.c`） |
+| `gpu_memory` | 通用 | 全局 GPU 内存统计（`gpu_memory_debugfs.c`）；口径与「偏高 / 约 2×」分析见第 16 章 |
 | `address_spaces/asN` | 通用 | AS fault 信息（`as_fault_debugfs.c`） |
 | `regs_history_enabled / regs_history_size / regs_history` | 通用（MALI_DEBUG） | 寄存器访问历史 |
 | `quirks_sc / quirks_tiler / quirks_mmu / quirks_gpu` | 通用 | HW quirk 寄存器覆盖 |
@@ -1332,7 +1570,52 @@ kbase 的并发模型可以概括为"**一把大自旋锁保护硬件状态 + �
 
 顺序原则：mutex 类"上层对象 → 下层对象"（kctx 级 → 设备级），最后才是 `hwaccess_lock`；已持 `hwaccess_lock` 时不能睡眠、不能取任何 mutex。`kbase_gpu_vm_lock` 与 `mmu_lock` 是外→内；`reg_lock` 的注释（`mali_kbase_mem.h:1367-1408`）提醒 kworker 中持锁分配要 `__GFP_NORETRY` 防 OOM 死锁。
 
-### 14.2 工作队列与线程
+### 14.2 `spin_lock_irqsave`：关本 CPU 中断 + 自旋锁
+
+kbase 里凡碰 `hwaccess_lock` 的进程 / workqueue 路径几乎都写成：
+
+```c
+unsigned long flags;
+spin_lock_irqsave(&kbdev->hwaccess_lock, flags);
+/* 临界区：改 slot_rb、pulled 计数、ctx 列表、PM 状态机…… */
+spin_unlock_irqrestore(&kbdev->hwaccess_lock, flags);
+```
+
+例如 `kbase_js_complete_atom_wq()`（`mali_kbase_js.c:3240-3241`）先 `mutex_lock(&runpool_mutex)`，再 `spin_lock_irqsave(&hwaccess_lock, flags)`——睡眠锁在外，自旋锁在内。
+
+这两个宏做两件事：
+
+1. **关本 CPU 的硬中断**，并把关之前的中断开关状态存进 `flags`
+2. **拿到自旋锁**（拿不到就忙等转圈）
+
+`spin_unlock_irqrestore` 反过来：先放锁，再按 `flags` **恢复**原先的中断状态（若进入临界区前中断本来就关着，退出后仍关着，不会误开）。
+
+**为什么必须关中断**：`hwaccess_lock` 同时被进程上下文和 IRQ 上下文使用。例如：
+
+| 上下文 | 典型路径 |
+|--------|----------|
+| 进程 / `job_done_wq` | `kbase_js_complete_atom_wq`、`kbase_js_pull`、`kbase_backend_slot_update` |
+| JOB / MMU / GPU IRQ | `kbase_job_irq_handler` → `kbase_job_done`；`kbase_mmu_interrupt`；`kbase_gpu_interrupt` |
+
+若进程侧只用 `spin_lock()` 不关中断，可能：进程已持锁 → 本 CPU 来了 JOB IRQ → handler 再 `spin_lock(hwaccess_lock)` → 锁已被本 CPU 占着 → **死锁**。所以凡是"锁会被中断里再拿"的 spinlock，进程侧必须用 `spin_lock_irqsave`。
+
+注意几点：
+
+- **只关本 CPU 硬中断**，不是整机；其它 CPU 仍可运行，只是也要来抢同一把锁。
+- **不专门关 softirq**；要挡 softirq 用 `spin_lock_bh`。kbase 这条路径对手是硬 IRQ，所以用 irqsave。
+- 临界区里**不能睡眠**（不能再 `mutex_lock`、`kmalloc(GFP_KERNEL)`、`wait_event` 等）。
+- `flags` 必须是局部变量，与 unlock 成对传递。
+
+| API | 拿锁 | 关本 CPU 硬中断 | 典型场景 |
+|-----|------|-----------------|----------|
+| `spin_lock` | ✓ | ✗ | 锁只在进程侧用，或已在关中断上下文 |
+| `spin_lock_irq` | ✓ | ✓（无条件关） | 已知进入前中断是开的 |
+| `spin_lock_irqsave` | ✓ | ✓（并保存旧状态） | **最常用**：锁可能被 IRQ 竞争 |
+| `spin_unlock_irqrestore` | 放锁 | 按 `flags` 恢复 | 与 irqsave 成对 |
+
+一句话：`spin_lock_irqsave` = **关本 CPU 中断 + 自旋锁**；`spin_unlock_irqrestore` = **放锁 + 恢复中断**。在 kbase 里 `hwaccess_lock` 几乎总是这套。
+
+### 14.3 工作队列与线程
 
 | 队列/线程 | 谁排 | 干什么 |
 |---|---|---|
@@ -1463,6 +1746,7 @@ flowchart TD
 | 设备 / 上下文初始化顺序 | `device/backend/mali_kbase_device_{jm,csf}.c` 的 `dev_init[]`；`context/backend/mali_kbase_context_{jm,csf}.c` 的 `context_init[]` |
 | GPU 型号差异 | `mali_kbase_hw.c`（features/issues 表）、`hw_access/regmap/*`、`backend/gpu/mali_kbase_l2_mmu_config.c`、`ipa/backend/*` |
 | 内存 | `mali_kbase_mem_linux.c`（ioctl/mmap）→ `mali_kbase_mem.c`（region/页/JIT）→ `mali_kbase_reg_track.c`（zone）→ `mmu/mali_kbase_mmu.c` |
+| `gpu_memory` / used_pages 偏高 | 第 16 章；`mali_kbase_gpu_memory_debugfs.c`、`mali_kbase_mem.c:mem_account_*`、`mali_kbase_mem.h:kbase_reg_prepare_native` |
 | MMU fault | `mmu/backend/mali_kbase_mmu_{jm,csf}.c` → `mmu/mali_kbase_mmu.c:kbase_mmu_page_fault_worker` |
 | 电源 | `mali_kbase_pm.c` → `backend/gpu/mali_kbase_pm_backend.c` → `pm_policy.c` → `pm_driver.c`（三个状态机） |
 | 频率/功耗 | `backend/gpu/mali_kbase_devfreq.c`、`pm_metrics.c`、`ipa/mali_kbase_ipa.c`、`csf/ipa_control/` |
@@ -1474,6 +1758,112 @@ flowchart TD
 | 复位 | JM `backend/gpu/mali_kbase_jm_hw.c:kbasep_reset_timeout_worker`；CSF `csf/mali_kbase_csf_reset_gpu.c:kbase_csf_reset_gpu_now` |
 | 计数器 / timeline / trace | `hwcnt/`、`mali_kbase_kinstr_prfcnt.c`、`tl/`、`debug/` |
 | 平台与虚拟化 | `platform/devicetree/`、`arbiter/` |
+
+---
+
+## 16. `gpu_memory` 占用偏高问题分析
+
+本章回答一类常见观测：**debugfs `gpu_memory` 总量明显高于（甚至约 2 倍于）各进程 `gpu_profile` / `mem_profile` 之和**；以及 monkey 等长稳测试里比值从约 1:1 **逐渐漂到约 2:1** 的原因。相关对象与分配路径见第 6 章；节点位置见 12.4。
+
+### 16.1 两套指标分别是什么
+
+| 指标 | 来源 | 含义 |
+|---|---|---|
+| **`gpu_memory`** | `mali_kbase_gpu_memory_debugfs.c`：打印 `kbdev->memdev.used_pages` 及每个 `kctx->used_pages` | 内核侧 **native 物理页**占用估计（页数） |
+| **`mem_profile` / 常称 gpu_profile** | 用户态经 `MEM_PROFILE_ADD` 写入、debugfs `ctx/.../mem_profile` 读出；或 Android memtrack 等按缓冲逻辑大小汇总 | **逻辑** GPU 缓冲大小（通常每块缓冲计一份），不区分 CPU/GPU 两套物理 backing |
+
+二者口径不同：前者跟 `mem_account_inc/dec`，后者跟用户态上报。拿它们直接相除出现「偏高 / 约 2×」时，要先分清是 **记账规则** 还是 **泄漏**。
+
+### 16.2 `used_pages` / `gpu_memory` 记什么、不记什么
+
+计入 `kctx->used_pages` 并累加到 `kbdev->memdev.used_pages` 的典型路径：
+
+- **Native 物理页**：`kbase_alloc_phy_pages_helper` → `mem_account_inc`（`mali_kbase_mem.c:1102-1110`）同时加 `kctx->used_pages`、`kbdev->memdev.used_pages`、`kbase_process_page_usage_inc`。
+- **MMU 页表页**：`kbase_mmu_alloc_pgd`（`mmu/mali_kbase_mmu.c:1447` 起）同样加两侧 `used_pages`（见 7.2）。
+- 释放对称走 `mem_account_dec` / PGD free 路径。
+
+**不**计入 `used_pages`（因而也不进 `gpu_memory`）的常见项：
+
+- **`mem_pool` 里空闲缓存页**：页从使用中释放回池时已 `mem_account_dec`；池内页是「可再分配的缓存」，不是「正在使用的 GPU 内存」（见 6.2）。
+- **dma-buf / userbuf 等 import**：物理页属导出方或进程 mm，native 路径不把它们记进 `used_pages`（用户态 profile / memtrack 却常把 import 缓冲算进 GPU）。
+
+因此：`gpu_memory` ≠「系统里所有与 GPU 相关的字节」；它更接近 **kbase 为 native + MMU 从 buddy/池拿来且尚未归还记账的页**。
+
+### 16.3 `cpu_alloc` 与 `gpu_alloc`：分别统计吗？`gpu_memory` 会相加吗？
+
+**会。** `kbase_alloc_phy_pages_helper(alloc, n)` 只对传入的那一个 `kbase_mem_phy_alloc` 做分配与 `mem_account_inc`，**不**区分「这是 CPU 侧还是 GPU 侧」——谁被调用谁就加 `n` 页。
+
+region 准备时（`kbase_reg_prepare_native`，`mali_kbase_mem.h:926-961`）：
+
+```text
+若 KCTX_INFINITE_CACHE 且 region 带 KBASE_REG_CPU_CACHED：
+    cpu_alloc = 新建 native alloc
+    gpu_alloc = 再建一套独立 native alloc    ← 两套物理页数组
+否则：
+    gpu_alloc = get(cpu_alloc)               ← 同一套，共享
+```
+
+真正 commit 物理页时（`kbase_alloc_phy_pages`，`mali_kbase_mem.c:1892-1900`；grow 路径 `mem_linux.c:2244-2254` 同理）：
+
+```text
+kbase_alloc_phy_pages_helper(cpu_alloc, size)     → used_pages += size
+若 cpu_alloc != gpu_alloc：
+    kbase_alloc_phy_pages_helper(gpu_alloc, size) → used_pages += size   ← 再加一份
+```
+
+因此：
+
+| 情况 | helper 调用次数 | 对 `gpu_memory` 的贡献 |
+|---|---|---|
+| 共享（`cpu_alloc == gpu_alloc`） | 1 | **1×** 逻辑页数 |
+| 分离（Infinite Cache + CPU_CACHED） | 2 | **2×** 逻辑页数 |
+
+释放路径对两套各 `kbase_free_phy_pages_helper` + `mem_account_dec`，对称扣减。`gpu_memory` 读到的就是这两次（或一次）记账之和，**没有**另做「只取 max」或「只计 gpu_alloc」的去重。
+
+Infinite Cache 开关：设备默认 `ctx/defaults/infinite_cache`，每 kctx 可覆盖 `ctx/<tgid>_<id>/infinite_cache`（`core_linux.c` 读写；新 kctx 在 `infinite_cache_active_default` 为真时置 `KCTX_INFINITE_CACHE`）。
+
+### 16.4 现象：总量约 2×，以及 monkey 中从 1 漂到 2
+
+**一上来就约 2×**：当前常驻 native 几乎都是「分离 backing」——`used_pages` 对每块逻辑缓冲计了 CPU 页 + GPU 页，而 profile 只计逻辑大小一次。
+
+**开始约 1:1，monkey 过程中逐渐升到约 2 并平台在 2 附近**（比「无界泄漏」更符合观测）：
+
+整体比值 ≈ 加权平均：
+
+\[
+\frac{\texttt{gpu\_memory}}{\sum \texttt{profile}}
+\approx
+\frac{1\cdot N_{\text{共享}} + 2\cdot N_{\text{分离}} + N_{\text{MMU 等}}}{N_{\text{共享}} + N_{\text{分离}}}
+\]
+
+- 前期：大量 GPU-only / 非 `CPU_CACHED` / 非 Infinite Cache → 共享物理页 → 比值 ≈ 1。
+- 中后期：UI/应用更多 CPU 可访问、cached 缓冲；Infinite Cache 打开时走分离 `cpu_alloc`/`gpu_alloc`；旧共享缓冲释放、新分离缓冲顶上 → 比值爬向 2。
+- **平台在约 2、很少持续涨过 2**：分离双计的理论上限；若是 kctx/页泄漏，比值通常会 **继续超过 2**。
+
+次要抬高因子（一般不会单独造成「精确停在 2」）：
+
+- MMU PGD 进 `used_pages`，profile 通常不含；
+- JIT / grow-on-GPU / CSF tiler heap 物理增长快于用户态上报；
+- zombie kctx：进程已不在 profile 汇总里，但 `kctx_list` 上仍有 `used_pages`（更易涨过 2）。
+
+### 16.5 和「真泄漏」怎么区分
+
+| 迹象 | 更可能 |
+|---|---|
+| 比值单调逼近 2 后平台，关 Infinite Cache 后回到 ~1 | **分离 backing 占比升高**（记账口径） |
+| 关 Infinite Cache 后仍持续爬升且 **>2**，或卸载应用后 `gpu_memory` 不回落 | **泄漏 / zombie kctx / 未回收 JIT·heap** |
+| `mem_pool_*` 很大但 `gpu_memory` 不高 | 正常：池是空闲缓存，不进 `used_pages` |
+| profile ≫ `gpu_memory` | 常见于大量 **import**（dma-buf 等）只进 profile |
+
+### 16.6 排查步骤（建议顺序）
+
+1. 读 `gpu_memory`：设备行 = `memdev.used_pages`；各 `kctx` 行应大致加总到设备行（另有极少设备级差异时再查）。
+2. 查 `ctx/defaults/infinite_cache` 与活跃 `ctx/*/infinite_cache`。
+3. 对比同一时刻 Σ 进程 profile 与 `gpu_memory`；monkey 中按时间点采样比值曲线。
+4. **对照实验**：关 Infinite Cache 复跑同一负载——比值始终 ~1 则坐实双份物理记账；仍爬升则转查 kctx 残留、`mem_view`/`mem_jit_*`、CSF `tiler_heaps`。
+5. 勿把 `mem_pool_size` 与 `gpu_memory` 直接相加当作「总占用」；池页已不在 `used_pages` 内。
+
+**结论**：`kbase_alloc_phy_pages_helper` 对 `cpu_alloc`、`gpu_alloc` **分别**记账；两者分离时 `gpu_memory` **把两份加在一起**。与用户态按逻辑大小只计一份的 profile 对比时，出现约 2× 或 monkey 中 1→2，优先怀疑 Infinite Cache 下 CPU/GPU 双份物理页，而不是业务「真用了两倍显存」。
 
 ---
 
