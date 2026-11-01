@@ -15,8 +15,12 @@
 | kbase 整体长什么样、模块怎么分、JM/CSF 是什么关系 | 第 1、2 章 |
 | 一个对象（设备 / 上下文 / 内存区域 / 作业）从生到死经历了什么 | 第 3、4、6、9、10 章 |
 | 一次 ioctl / 一次中断 / 一次掉电 / 一次复位到底走了哪些函数、在哪里排队、在哪里等 | 第 5、7、8、11 章及第 15 章"关键路径串讲" |
-| mem pool 是每 kctx 私有还是全机共享；page fault 补页从哪拿 | 第 6.2、7.3 节 |
-| page fault 与 bus fault 有何不同 | 第 7.3 节 |
+| mem pool 是每 kctx 私有还是全机共享；池上限是否 × context 数 | 第 6.2 节 |
+| page fault 补页从哪拿 | 第 6.2、7.4 节 |
+| cookie / `kbase_gpu_mmap` 与出参 GPU VA；谁发 `MEM_COMMIT` | 第 6.3、6.5 节 |
+| GPU MMU / AS / TRANSTAB / `as_nr` 是什么 | 第 7.1 节 |
+| page fault 与 bus fault 有何不同 | 第 7.4 节 |
+| JM 与 CSF 等 fence 分别在哪 | 第 9.5、10.7 节 |
 | 出了问题去哪儿看（debugfs、sysfs、trace、计数器） | 第 12 章 |
 | 多线程为什么不会踩坏数据（锁与工作队列） | 第 14 章 |
 | `gpu_memory` 比进程 profile 高、甚至约 2 倍怎么回事 | 第 16 章 |
@@ -47,10 +51,27 @@ kbase 是一个 Linux **platform driver**（`kbase_platform_driver`，`mali_kbas
 | 典型 GPU | Midgard（T6xx–T8xx）、Bifrost（G31/G51/G52/G71/G72/G76）、Valhall 早期（G57/G77/G78） | Valhall 后期（G310/G510/G610/G710）、5th Gen（G615/G715/Immortalis-G720…） |
 | 用户提交单位 | `base_jd_atom`（一个 job chain 的描述 + 最多 2 个依赖） | GPU 可见的 **command stream ring buffer** + 门铃（doorbell） |
 | 内核调度单位 | atom → 三个 Job Slot（`BASE_JM_MAX_NR_SLOTS`=3，`mali_kbase_defs.h:87`） | `kbase_queue_group`（CSG）→ 最多 31 个硬件 CSG slot（`MAX_SUPPORTED_CSGS`=31，`csf/mali_kbase_csf_firmware.h:77`） |
-| 谁在真正调度 | 内核 Job Scheduler（`mali_kbase_js.c`）逐 atom 决定何时上槽 | 内核只调度"组"到 slot；组内各 queue 的命令由 MCU 固件拉取执行 |
+| 谁在真正调度 | 内核 Job Scheduler（`mali_kbase_js.c`）逐 atom 决定何时上槽 | 内核只把「组」排上/换下 CSG slot；组内各 queue 的命令由 MCU 固件拉取执行（见下） |
 | 完成通知 | JOB IRQ → `kbase_job_done()` → 事件 → 用户 `read()` | JOB IRQ → `kbase_csf_interrupt()`；用户主要靠轮询 CS 输出页 / sync object，内核事件只报错误与特殊通知 |
 | CPU 侧同步 | soft job（fence wait/trigger、event、JIT…） | KCPU queue（fence、CQS、JIT、import…） |
 | 相关源码 | `mali_kbase_jd.c` `js.c` `jm.c` `softjobs.c` `jm/`、`backend/gpu/mali_kbase_jm_*.c` `js_backend.c` | `csf/`（61 个文件、3.8 万行，最大子系统） |
+
+#### 「内核只调度组到 slot」是什么意思
+
+CSF 里有三层对象，不要和 JM 的 atom/Job Slot 混为一谈：
+
+| 名称 | 是什么 | 谁管 |
+|---|---|---|
+| **queue**（`kbase_queue`） | 一条 command stream：用户写 ring buffer + 敲门铃 | 用户态填命令；**MCU 固件**按 insert/extract 拉命令执行 |
+| **组 / queue group**（`kbase_queue_group`，又称 CSG） | 若干条 queue 绑在一起，带优先级、核掩码、suspend buffer 等 | 用户态创建/绑定；**内核 scheduler** 决定它何时占用硬件 |
+| **CSG slot** | GPU/固件侧有限个硬件槽位（≤31） | 组「上槽」后固件才能看见并跑该组的流 |
+
+**「只调度组到 slot」** = 内核 CSF scheduler（`mali-gpuq-kthread`，见 10.4）的粒度是 **整个 `kbase_queue_group`**：
+
+- **会做**：在 runnable 组之间做 tick/tock 轮转；`program_csg_slot` 把组绑到某个空闲/抢占得到的 CSG slot（写 `CSG_REQ`、配 AS、绑 user I/O 与 suspend buffer、`STATE_START/RESUME`）；时间片到或更高优先级到来时 `SUSPEND`/`TERMINATE` 换下；响应 kick「这个组有活了，需要上槽」。
+- **不会做**：不解析 ring buffer 里的 GPU 命令，不决定组内哪条 queue、哪条指令先跑，不把「一条 draw/dispatch」写进硬件——那些由 **已上槽组内的 MCU 固件**完成。
+
+对比 JM：内核把每个 **atom** 直接塞进最多 3 个 Job Slot，完成也按 atom 回收。CSF 则是「内核管谁占槽，固件管槽里怎么跑」。用户 `CS_QUEUE_KICK` 只是告诉内核「某 queue 所属的组该被考虑上槽」，ioctl 很快返回；真正上槽与命令消费见第 10.2、10.4 节。
 
 选择由 Kconfig `CONFIG_MALI_CSF_SUPPORT` 决定：`Kbuild:86-91` 把它翻译成 `MALI_USE_CSF=1/0` 并作为 `-DMALI_USE_CSF=` 传给所有编译单元（`Kbuild:114`）；`Kbuild:197` 起在 `!CSF` 时编入 JM 对象，`Kbuild:228` 起在 `CSF` 时编入 `csf/`。因此源码中大量 `#if MALI_USE_CSF ... #else ... #endif`，以及每个模块目录下成对出现的 `*_jm.c` / `*_csf.c`。
 
@@ -235,10 +256,97 @@ flowchart LR
   MMU -->|"as_nr 指向"| AS
 ```
 
-- **`kbase_device`**（`mali_kbase_defs.h:1071` 起）：寄存器窗口与 regmap；`irqs[3]`（JOB / MMU / GPU）；`as[BASE_MAX_NR_AS]`（16 个硬件地址空间，`mali_kbase_defs.h:95`）与 `as_to_kctx[]`、`as_free` 位图；`pm`；设备级 `mem_pools`、`memdev`、`mmu_mode`、`mgm_dev`；`gpu_props` + `hw_issues_mask[]` + `hw_features_mask[]`；hwcnt 一整套（`hwcnt_gpu_iface` / `hwcnt_gpu_ctx` / `hwcnt_gpu_virt` / `kinstr_prfcnt_ctx`）；`timeline`、`ktrace`；`kctx_list` + `kctx_list_lock` + `ctx_num` + `process_root`；`ipa`；`protected_ops` / `protected_dev` / `protected_mode`；`hwaccess_lock`、`mmu_hw_mutex`；JM 的 `js_data` 或 CSF 的 `csf`；`arb`、`dummy_job_wa`、`mem_migrate`、`gpu_metrics`。
-- **`kbase_file`**（`mali_kbase_defs.h:1453-1468`）：`kbdev`、`filp`、`owner`（创建 fd 的进程的 `files_struct`，用来拒绝跨进程使用同一个 fd）、`kctx`、`api_version`、`setup_state`（atomic）、`destroy_kctx_work`、`lock`、`fops_count`、`map_count`、`event_queue`。
-- **`kbase_context`**（`mali_kbase_defs.h:1913` 起）：按子系统分组见上图；`flags` 是 `KCTX_*` 位图（`mali_kbase_defs.h:1536-1554`），重要位：`KCTX_COMPAT`（32 位进程）、`KCTX_FORCE_SAME_VA`（64 位默认开，GPU VA == CPU VA）、`KCTX_SUBMIT_DISABLED`、`KCTX_PRIVILEGED`（独占一个 AS）、`KCTX_SCHEDULED`（JM：在 runpool 中）、`KCTX_DYING`、`KCTX_AS_DISABLED_ON_FAULT`（未处理 fault 后 AS 被禁）、`KCTX_PULLED_SINCE_ACTIVE_JS0/1/2`、`KCTX_PAGE_FAULT_REPORT_SKIP`、`KCTX_JPL_ENABLED`（JIT 物理限制）。
-- **`kbase_as`**（JM `jm/mali_kbase_jm_defs.h:852-861`；CSF `csf/mali_kbase_csf_defs.h:1768-1778`）：`number`、`pf_wq`（每 AS 一个 fault workqueue）、`work_pagefault` / `work_busfault` 与对应 `pf_data` / `bf_data`（`kbase_fault`）、`current_setup`；**CSF 多一组 `work_gpufault` + `gf_data`**。
+关系一句话：**一次 `open` → 一个 `kbase_file`；`SET_FLAGS` 后 → 一个 `kbase_context`；每块 GPU → 一个 `kbase_device`（含最多 16 个 `kbase_as`）**。下文按对象列主要成员、意义与典型调用者（谁创建 / 谁读写）。完整字段以头文件为准，这里只收排障与读代码时最常碰到的。
+
+#### `kbase_device`（`mali_kbase_defs.h:1071` 起）
+
+一块物理 GPU；`probe` 时 `kbase_device_alloc` + `dev_init[]` 创建，remove 时逆序拆除。全局经 `kbase_find_device(minor)` / `kctx->kbdev` 找到。
+
+| 主要成员 | 意义 | 典型调用者 / 使用者 |
+|---|---|---|
+| `dev` / `mdev` / `devname` / `id` | Linux `device`、misc `/dev/maliN`、设备名与序号 | `misc_register`（probe）；`kbase_open` 按 minor 查找 |
+| `reg` / `reg_start`/`reg_size` / `regmap` | MMIO 窗口与按 arch 选好的寄存器表 | 全驱动 `kbase_reg_read/write`；`kbase_regmap_init`（early_init） |
+| `irqs[3]` | JOB / MMU / GPU 三路中断号 | `kbase_get_irqs`、`kbase_install_interrupts`；`irq_linux.c` handler |
+| `clocks[]` / `regulators[]` | 平台时钟与电源 | `power_control_init`；PM / devfreq |
+| `pm` | 电源前端（`active_count` 等）+ backend 状态机 | `kbase_pm_context_active/idle`；提交与 IRQ 路径；第 8 章 |
+| `mem_pools` / `memdev` / `mgm_dev` / `mmu_mode` | 设备级页池、`used_pages`、memory group manager、页表模式 ops | `kbase_mem_init`；各 kctx 池 `next_pool`；MMU insert/alloc_pgd；第 6、16 章 |
+| `as[16]` / `as_to_kctx[]` / `as_free` / `nr_*_address_spaces` | 硬件 Address Space 与空闲位图 | `kbase_ctx_sched_*`；JM/CSF 提交前绑 AS；第 3.6 节 |
+| `gpu_props` / `hw_issues_mask` / `hw_features_mask` / `hw_quirks_*` | GPU 属性与勘误/特性位 | `kbase_hw_set_*`（early_init）；`kbase_hw_has_issue/feature`；GET_GPUPROPS |
+| `hwcnt_*` / `kinstr_prfcnt_ctx` | 硬件计数器栈 | `TLSTREAM` / `KINSTR_PRFCNT` ioctl；第 12 章 |
+| `timeline` / `ktrace` | 用户可读 timeline 与内核环形 trace | `TLSTREAM_ACQUIRE`；`KBASE_KTRACE_ADD` |
+| `kctx_list` + `kctx_list_lock` / `ctx_num` / `process_root` | 打开的全部 kctx；按 tgid 的进程树 | `kbase_create/destroy_context`；`gpu_memory` debugfs；memtrack |
+| `hwaccess_lock` / `mmu_hw_mutex` / `hwaccess` | 「硬件正在做什么」的总锁与后端数据 | IRQ、PM、AS 配置、JM ringbuffer / CSF slot；第 14 章 |
+| `js_data`（JM）或 `csf`（CSF） | Job Scheduler 设备数据 **或** 固件/scheduler/MCU MMU | `mali_kbase_js.c` **或** `csf/mali_kbase_csf_*.c`；第 9 / 10 章 |
+| `devfreq` / `ipa` | 调频与功耗模型 | `kbase_backend_devfreq_*`；thermal cooling；第 8.4 |
+| `protected_ops` / `protected_dev` / `protected_mode` | Protected mode 进入/退出 | CSF scheduler / JM 保护作业路径 |
+| `infinite_cache_active_default` / `mem_pool_defaults` | 新 kctx 默认 Infinite Cache、池上限 | `context_init`；debugfs `ctx/defaults/` |
+| `system_coherency` / `current_gpu_coherency_mode` | 系统一致性模式（ACE / ACE-Lite / NONE） | `kbase_device_coherency_init`；内存 flags 决策 |
+| `arb` / `dummy_job_wa` / `mem_migrate` / `gpu_metrics` | 虚拟化仲裁、dummy job 勘误、页迁移、Android 工作周期 | arbiter；`firmware_init_once`（JM）；migrate；metrics |
+
+#### `kbase_file`（`mali_kbase_defs.h:1453-1468`）
+
+一次 `open(/dev/maliN)` 对应一个；**每进程 / 每 VM 不限次数**，每次 open 新建一份。`filp->private_data` 指向它。
+
+| 主要成员 | 意义 | 典型调用者 / 使用者 |
+|---|---|---|
+| `kbdev` | 所属 GPU 设备 | `kbase_file_new`；此后所有 fops 经此找设备 |
+| `filp` | 对应的 Linux `struct file` | open/release；mmap cookie 等 |
+| `owner` | 打开时 `current->files`；禁止跨进程用同一 fd | `kbase_file_inc_fops_count_if_allowed`；`flush` 时 owner 侧销毁 kctx |
+| `kctx` | `SET_FLAGS` 成功后挂上的上下文（此前可为 NULL） | `kbase_file_create_kctx` / `get_kctx_if_setup_complete` |
+| `api_version` | `VERSION_CHECK` 协商结果 | handshake；create_kctx 传入 |
+| `setup_state` | `NEED_VSN → … → COMPLETE → DESTROY_CTX` 状态机 | `VERSION_CHECK` / `SET_FLAGS` / flush/release；第 3.3 节 |
+| `fops_count` / `map_count` | 在途 ioctl/read/poll 与 mmap 引用 | 每个 fop 入口 inc/dec；归零才允许销毁 kctx |
+| `destroy_kctx_work` | 异步拆 kctx 的 work | 最后一个引用释放时排入 `system_wq` |
+| `event_queue` | 完成事件等待队列 | `kbase_event_wakeup`；用户 `poll`/`read` |
+| `lock` | 保护上述计数与销毁判定 | fops 路径 |
+
+#### `kbase_context`（`mali_kbase_defs.h:1913` 起）
+
+一个用户 GPU 地址空间与提交世界；`SET_FLAGS` → `kbase_create_context` + `context_init[]` 创建，close/flush 时拆。挂在 `kbdev->kctx_list` 与（可选）`kbase_process`。
+
+| 主要成员 | 意义 | 典型调用者 / 使用者 |
+|---|---|---|
+| `kfile` / `kbdev` / `kctx_list_link` | 回指 file 与设备；挂入设备链表 | create/destroy；debugfs 遍历 |
+| `id` / `tgid` / `pid` / `process_mm` | 上下文序号与所属进程 | debugfs 名 `ctx/<tgid>_<id>`；OOM / 页记账 |
+| `mmu` / `as_nr` / `refcount` | GPU 页表；当前绑定的 AS 号（未绑为 INVALID）；AS 引用计数 | `kbase_ctx_sched_retain/release_ctx`；MMU insert/fault；第 3.6、7 章 |
+| `reg_zone[]` / `reg_lock` | SAME_VA / EXEC / CUSTOM 等 VA zone 与 region 树 | `MEM_ALLOC` / mmap / import；第 6.1 |
+| `mem_pools` / `mem_partials*` / `used_pages` | 上下文级页池、2MB 拆页 partial、`gpu_memory` 记账 | alloc/free phy pages；page fault 补页；第 6.2、7.4、16 章 |
+| `flags`（`KCTX_*`） | 见下表重要位 | create、JS/CSF scheduler、fault、close |
+| `jctx` + `jsctx_queue[][]`（JM）或 `csf`（CSF） | 作业依赖与按优先级×slot 的队列 **或** groups/queues/kcpu/tiler | `JOB_SUBMIT` / softjob **或** `CS_QUEUE_*`；第 9 / 10 章 |
+| `cookies` / `pending_regions[]` | SAME_VA 分配返回 cookie，待 mmap 兑现 | `MEM_ALLOC` → 用户 `mmap(cookie)` |
+| `jit_*` / `evict_list` / reclaim shrinker | JIT 池与可驱逐内存 | JIT ioctl / softjob / CSF KCPU；内存压力 |
+| `event_list*` / `event_workq` / `event_count` | 完成事件队列（JM 主用；与 kfile 事件配合） | job done → `kbase_event_post` → `read` |
+| `aliasing_sink_page` | import pad / alias 用的 sink 页 | UMM import pad 映射 |
+| `kprcs` / `kprcs_link` | 归属的 `kbase_process`（同 tgid 多 kctx） | process 级页统计；`process_root` |
+| `mem_profile_*` / `kctx_dentry` | 用户态 profile 缓冲与 debugfs 目录 | `MEM_PROFILE_ADD`；第 12、16 章 |
+
+**常用 `KCTX_*` 标志**（`mali_kbase_defs.h` 位图）：
+
+| 标志 | 意义 |
+|---|---|
+| `KCTX_COMPAT` | 32 位进程跑在 64 位内核 |
+| `KCTX_FORCE_SAME_VA` | 64 位默认：GPU VA == CPU VA |
+| `KCTX_INFINITE_CACHE` | 新 region 可走 CPU/GPU 分离物理页（见第 16 章） |
+| `KCTX_SUBMIT_DISABLED` | 禁止提交（监控/握手期等） |
+| `KCTX_PRIVILEGED` | 可独占 AS |
+| `KCTX_SCHEDULED` | JM：已在 runpool |
+| `KCTX_DYING` | 正在销毁 / zap |
+| `KCTX_AS_DISABLED_ON_FAULT` | fault 后 AS 被禁，release 时彻底解绑 |
+| `KCTX_PAGE_FAULT_REPORT_SKIP` | 退出期间抑制误报 page fault |
+| `KCTX_JPL_ENABLED` | JIT 物理页压力限制开启 |
+
+#### `kbase_as`（JM `jm/mali_kbase_jm_defs.h:852`；CSF `csf/mali_kbase_csf_defs.h:1768`）
+
+硬件 Address Space 槽之一，嵌在 `kbdev->as[i]`；与某个 kctx 的绑定是动态的（`as_to_kctx` / `kctx->as_nr`）。
+
+| 主要成员 | 意义 | 典型调用者 / 使用者 |
+|---|---|---|
+| `number` | AS 编号 0…15（CSF 下 0 常为 MCU） | ctx_sched；MMU 配 `AS_TRANSTAB` |
+| `pf_wq` | 该 AS 专用 fault workqueue | MMU IRQ 里 `queue_work` |
+| `work_pagefault` / `pf_data` | page fault work 与锁存的 addr/status | `kbase_mmu_page_fault_worker`；第 7.4 |
+| `work_busfault` / `bf_data` | bus fault work 与数据 | `kbase_mmu_bus_fault_worker` |
+| `work_gpufault` / `gf_data` | **仅 CSF**：GPU fault work | CSF GPU fault 路径 |
+| `current_setup` | 当前写入硬件的 MMU 配置快照 | `kbase_mmu_update` / `disable`；`kbase_mmu_hw_configure` |
 
 ### 3.2 Probe：`dev_init[]` 表
 
@@ -368,6 +476,8 @@ flowchart TD
 顺序的因果：**必须先让 GPU 不再引用这个 kctx（zap 作业、释放 AS、禁 MMU），再拆 region 与页表，最后放进程引用**——反过来会让在途作业踩到已释放的页表。
 
 ### 3.6 Context Scheduler：kctx ↔ 硬件 AS
+
+GPU MMU / AS / `AS_TRANSTAB` / `as_nr` 的概念说明见 **第 7.1 节**；本节只写绑定与驱逐时序。
 
 kbdev 上可以同时存在很多 kctx，但硬件只有 `nr_hw_address_spaces` 个 AS（≤16）。`mali_kbase_ctx_sched.c` 用**引用计数 + 惰性驱逐**把 kctx 绑到 AS：
 
@@ -540,26 +650,142 @@ flowchart TB
 
 ### 6.1 三个地址空间与三类对象
 
+下图把 **CPU 虚地址、GPU 虚地址、物理页** 三侧对象画在一起；**每条连线上的文字表示指针/归属关系**（不是字段名的简单罗列）。
+
 ```mermaid
 flowchart LR
-  subgraph GPUVA["GPU 虚拟地址（每 kctx 独立）"]
-    Z["reg_zone[]：SAME_VA / CUSTOM_VA / EXEC_VA<br/>CSF 再加 EXEC_FIXED_VA / FIXED_VA"]
-    R["kbase_va_region（rbtree 节点）"]
-  end
-  subgraph PHYS["物理页"]
-    A["kbase_mem_phy_alloc.pages[]<br/>tagged_addr：HUGE_PAGE / HUGE_HEAD / FROM_PARTIAL"]
-    P["kbase_mem_pool：kctx 池 → kbdev 池 → 内核 alloc_pages"]
-  end
   subgraph CPUVA["CPU 虚拟地址（用户进程 mm）"]
-    V["vma + kbase_vm_ops（open/close/fault）"]
+    V["vma + kbase_vm_ops<br/>open / close / fault"]
   end
-  Z --> R
-  R -->|gpu_alloc| A
-  R -->|cpu_alloc| A
-  A -.->|来自| P
-  V -->|vm_private_data| R
-  R -->|MMU 页表| GPUPT["kctx->mmu（第 7 章）"]
+
+  subgraph GPUVA["GPU 虚拟地址（每个 kctx 独立一份）"]
+    Z["reg_zone[]<br/>SAME_VA / CUSTOM_VA / EXEC_VA …"]
+    R["kbase_va_region<br/>红黑树上的区域节点"]
+    GVA["本区域对应的 GPU 虚地址区间<br/>基址 = start_pfn << PAGE_SHIFT<br/>长度 = nr_pages 页"]
+  end
+
+  subgraph PHYS["物理页"]
+    A["kbase_mem_phy_alloc.pages[]<br/>实际物理页数组"]
+    P["kbase_mem_pool<br/>kctx 池 → kbdev 池 → 内核 alloc_pages"]
+  end
+
+  GPUPT["kctx->mmu<br/>GPU 页表根（第 7 章）"]
+
+  Z -->|"每个 zone 划定一大段 GPU VA；<br/>并拥有 reg_rbtree，树上节点=区域对象"| R
+  R -->|"区域对象用字段描述自己的 GPU VA：<br/>start_pfn = 起始页号<br/>nr_pages = 页数<br/>（非 SAME_VA：kbase_gpu_mmap 写入 start_pfn；<br/>SAME_VA：mmap 后与 CPU VA 相同）"| GVA
+  GVA -->|"落在所属 zone 的<br/>base_pfn … base_pfn+va_size 范围内"| Z
+  R -->|"字段 gpu_alloc 指向<br/>GPU 侧物理页集合"| A
+  R -->|"字段 cpu_alloc 指向<br/>CPU 侧物理页集合<br/>（常与 gpu_alloc 为同一对象）"| A
+  A -.->|"空闲页从页池取出；<br/>用完可还回页池"| P
+  V -->|"vma->vm_private_data 指向<br/>该 VMA 对应的区域对象<br/>（mmap 建立 CPU 映射后）"| R
+  V -.->|"SAME_VA 时：CPU VMA 起点<br/>等于左侧 GVA 基址"| GVA
+  R -->|"按该区域的 GPU VA（start_pfn）<br/>把物理页写入页表 PTE"| GPUPT
+  GVA -->|"GPU 用此 VA 访存时<br/>经页表翻译到 PA"| GPUPT
 ```
+
+读图：
+
+| 连线 | 含义 |
+|------|------|
+| zone → region | zone 划定一大段 GPU 虚地址，并用红黑树管理其上的区域（含 FREE 空洞） |
+| **region → GPU 虚地址区间** | **`start_pfn` / `nr_pages` 就是这块区域的 GPU VA**；字节基址 = `start_pfn << PAGE_SHIFT` |
+| GPU 虚地址区间 → zone | 该区间必须落在所属 zone 的 `[base_pfn, base_pfn+va_size)` 内 |
+| region → `pages[]`（经 `gpu_alloc` / `cpu_alloc`） | 区域对象记录「这段 VA 的 backing 物理页在哪」 |
+| `pages[]` ← 页池 | 物理页从哪里分配、用完后往哪还 |
+| `vma` → region | CPU 侧映射通过 `vm_private_data` 绑到同一块区域 |
+| `vma` ⇢ GPU VA（SAME_VA） | SAME_VA 路径下 CPU 虚地址与 GPU 虚地址取同一数值 |
+| region / GPU VA → `kctx->mmu` | 按该区域的 GPU VA 写 PTE；GPU 访存时用此 VA 经页表得到 PA |
+
+#### `kbase_va_region` 的结构，以及它和 GPU 虚地址怎样关联、怎样挑选
+
+先分清三层（都在同一个 `kbase_context` 里，**每个 context 独立一份**）：
+
+| 层次 | 是什么 |
+|------|--------|
+| **GPU 虚地址空间** | 一大段连续的页号空间，切成多个 **zone**（SAME_VA、CUSTOM_VA…），互不重叠 |
+| **zone**（`kbase_reg_zone`） | 一段 `[base_pfn, base_pfn + va_size_pages)`，自带一棵红黑树 `reg_rbtree` |
+| **区域对象**（`kbase_va_region`） | 树上的一个节点：表示「这一次分配占用从哪个页号开始、占多少页」，并挂着物理页 |
+
+**单个区域对象里和地址相关的主要字段**（`mali_kbase_mem.h:649` 起）：
+
+```text
+struct kbase_va_region {
+  rb_node rblink;              // 挂进所属 zone 的红黑树（按 start_pfn 排序）
+  rb_root *rbtree;             // 指回所属 zone 的 reg_rbtree
+  u64 start_pfn;               // GPU 虚地址基址（页号）；VA = start_pfn << PAGE_SHIFT
+  size_t nr_pages;             // 这段虚地址占多少页（= 用户 va_pages）
+  size_t initial_commit;       // 首次提交了多少物理页
+  unsigned long flags;         // 权限 / cache / zone 编码 / FREE 等
+  size_t extension;            // 缺页增长步进
+  kbase_mem_phy_alloc *cpu_alloc;  // CPU 侧物理页集合
+  kbase_mem_phy_alloc *gpu_alloc;  // GPU 侧物理页集合（可与 cpu 相同或分离）
+  ...
+};
+```
+
+**zone 与多块 region、GPU 虚地址轴的关系**（示意：一个 zone 内「已占用」与「空闲」节点交替）：
+
+```mermaid
+flowchart TB
+  KCTX["一个 kbase_context"]
+
+  KCTX -->|"拥有数组 reg_zone[]"| Z1
+  KCTX -->|"拥有数组 reg_zone[]"| Z2
+  KCTX -->|"拥有数组 reg_zone[]"| Z3
+
+  Z1["SAME_VA_ZONE<br/>覆盖一段 GPU VA：base_pfn + va_size_pages"]
+  Z2["CUSTOM_VA_ZONE<br/>覆盖另一段互不重叠的 GPU VA"]
+  Z3["EXEC_VA / FIXED_VA …"]
+
+  Z1 -.->|"各 zone 的 VA 区间互不重叠"| Z2
+  Z2 -.->|"各 zone 的 VA 区间互不重叠"| Z3
+
+  Z2 -->|"拥有一棵红黑树 reg_rbtree<br/>树上节点 = 本 zone 内所有 region<br/>按 start_pfn 排序"| ROOT["CUSTOM_VA.reg_rbtree"]
+
+  ROOT -->|"树节点（flags 含 FREE）"| F1["FREE 空洞<br/>start_pfn=A, nr_pages=大"]
+  ROOT -->|"树节点（已分配缓冲）"| R1["region₁<br/>start_pfn=S1, nr_pages=N1"]
+  ROOT -->|"树节点（flags 含 FREE）"| F2["FREE 空洞<br/>start_pfn≈S1+N1"]
+  ROOT -->|"树节点（已分配缓冲）"| R2["region₂<br/>start_pfn=S2, nr_pages=N2"]
+
+  F1 -->|"GPU 虚地址轴上紧邻<br/>（页号递增）"| R1
+  R1 -->|"GPU 虚地址轴上紧邻"| F2
+  F2 -->|"GPU 虚地址轴上紧邻"| R2
+
+  R1 -->|"gpu_alloc / cpu_alloc 指向"| PHYS1["物理页 pages[]"]
+  R2 -->|"gpu_alloc / cpu_alloc 指向"| PHYS2["物理页 pages[]"]
+
+  R1 -->|"rbtree 指针指回"| ROOT
+  R2 -->|"rbtree 指针指回"| ROOT
+```
+
+同一 zone 在 **GPU 虚地址轴**上的展开（与上图节点一一对应；页号递增向右）：
+
+```text
+  |←―――――――― zone.base_pfn 起，共 va_size_pages 页 ――――――――→|
+  [  FREE/F1  ][ region₁ 已占用 ][ FREE/F2 ][ region₂ 已占用 ][ … ]
+               ↑
+               region₁.start_pfn
+               长度 = region₁.nr_pages
+               GPU VA 字节地址 = start_pfn << PAGE_SHIFT
+```
+
+读图要点：context **拥有**多个 zone；每个 zone **拥有**一棵树；树上每个节点是一个 `kbase_va_region`（空闲或已分配）；已分配节点再 **指向** 物理页；节点上的 `start_pfn`/`nr_pages` 就是它在该 zone 虚地址轴上的位置与长度。
+
+**关联方式（怎么从「地址」找到「区域对象」）**：
+
+1. 已知 GPU 虚地址 → `地址 >> PAGE_SHIFT` 得到页号 → 判断落在哪个 zone → 在该 zone 的红黑树上按 `start_pfn` 查找 enclosing 节点（`kbase_region_tracker_find_region_enclosing_address`）。  
+2. 已知区域对象 → 读 `start_pfn` / `nr_pages` 即知其 GPU 虚地址区间；再通过 `gpu_alloc->pages[]` 找到物理页；GPU MMU 页表把该区间内的 VA 翻译成这些 PA（第 7 章）。  
+3. 区域对象通过 `rbtree` 指针从属于某一个 zone；**不会**同时挂在两个 zone 上。
+
+**挑选方式（新分配时 GPU 虚地址怎么定）**——`kbase_add_va_region_rbtree`（由 `kbase_gpu_mmap` 调用）：
+
+| 情况 | 怎么挑 |
+|------|--------|
+| 调用时 **指定了地址**（`addr ≠ 0`，如 FIXED） | 在树上找到覆盖该区间的 **FREE** 节点，从中拆出一段，改成已分配的 `reg`，`start_pfn` = 指定页号 |
+| 调用时 **地址为 0**（最常见的非 SAME_VA 自动分配） | `kbase_region_tracker_find_region_meeting_reqs`：在该 zone 的 FREE 节点里找一块 **够大、满足 align** 的空洞，拆出后写入本次 `reg->start_pfn` |
+| **SAME_VA** | ioctl 阶段先不挑最终地址（挂 cookie）；用户 `mmap` 后以 **CPU VMA 起点** 作为 GPU 虚地址再走映射 |
+
+新建区域对象时（`kbase_alloc_free_region`）先带 `KBASE_REG_FREE` 出现在「空闲」语义里；真正分配成功并入树后清掉 FREE，成为上图中的「已占用」节点。空闲区间本身也用同样的 `kbase_va_region` 结构表示（flags 含 FREE），所以树上既有业务缓冲，也有空洞占位。
 
 - **GPU VA zone**（`enum kbase_memory_zone`，`mali_kbase_reg_track.h:141-156`）：`SAME_VA_ZONE`、`CUSTOM_VA_ZONE`、`EXEC_VA_ZONE`；CSF 另有 `EXEC_FIXED_VA_ZONE`、`FIXED_VA_ZONE`（用户指定固定地址）和设备级 `MCU_SHARED_ZONE`。每个 zone 是一个 `kbase_reg_zone`：`base_pfn`、`va_size_pages`、独立 `reg_rbtree`。
 
@@ -620,9 +846,72 @@ kctx.mem_pools.small[gid]  → next_pool →  kbdev.mem_pools.small[gid]
 kctx.mem_pools.large[gid]  → next_pool →  kbdev.mem_pools.large[gid]
 ```
 
-上限 `KBASE_MEM_POOL_MAX_SIZE_KCTX/KBDEV = 64MB`（`mali_kbase_mem.h:966,971`）。
+上限常量 `KBASE_MEM_POOL_MAX_SIZE_KCTX` / `KBDEV` = 64MB 对应的**页数**（`mali_kbase_mem.h:966,971`）。含义是：**每个小页池各自**可缓存的空闲页上限（`kbase_mem_pool_group_config_set_max_size` 会按 group 设到每个 `small[gid]`，large 池按 2MB 粒度换算）；限制的是池里**空闲缓存**，不是 `used_pages`。新 kctx 默认用 `MAX_SIZE_KCTX`（经 `mem_pool_defaults`），设备池用 `MAX_SIZE_KBDEV`。**没有**「全机所有 context 的 pool 总和 ≤ MAX_SIZE_KCTX」的全局帽；N 个 context 满池时，空闲缓存总量可接近「每 ctx 各池上限 × N」再加上 kbdev 共享池（再经 spill/shrinker 还给 OS）。
 
-#### 取页 / 还页顺序（三级 fallback）
+#### `kbase_alloc_phy_pages_helper` 与 `kbase_mem_pool_alloc_pages` 的关系
+
+| 函数 | 层级 | 职责 |
+|---|---|---|
+| **`kbase_alloc_phy_pages_helper`**（`mali_kbase_mem.c:1124-1319`） | **策略层**（面向 `kbase_mem_phy_alloc`） | 决定「先大页还是小页、要不要用 partial」；先 `mem_account_inc`；把拿到的页写入 `alloc->pages[]` 并更新 `nents`；失败则回滚已分配部分 |
+| **`kbase_mem_pool_alloc_pages`**（`mali_kbase_mem_pool.c`） | **池层**（面向某一个 `kbase_mem_pool`） | 从指定池（及 `next_pool`）抠出 N 页；不够则经 MGM/`alloc_pages` 向内核要；**不**关心 region/alloc/used_pages 策略 |
+
+关系一句话：**helper 调用 `kbase_mem_pool_alloc_pages`（以及单页的 `kbase_mem_pool_alloc` / `grow`）**；池函数实现「三级 fallback 取页」，helper 实现「大页 + partial + 小页」的组合策略与记账。
+
+```text
+MEM_ALLOC / MEM_COMMIT / page_fault_try_alloc（locked 变体）…
+        │
+        ▼
+kbase_alloc_phy_pages_helper(alloc, nr)     ← 策略 + 记账 + 填 alloc->pages
+        │
+        ├── kbase_mem_pool_alloc_pages(large[gid], …)   ┐
+        ├── kbase_mem_pool_alloc / grow(large) + partial │── 池层取页
+        └── kbase_mem_pool_alloc_pages(small[gid], …)   ┘
+                │
+                ▼
+        kctx 池 → kbdev 池 → mgm_alloc_page（见下图）
+```
+
+另有 **`kbase_alloc_phy_pages_helper_locked`**：已持 pool 锁时用（如 page fault / JIT grow），语义类似，但只从**当前已锁定的那个池**取，不够则让调用方去 `pool_grow` 再重试。
+
+#### `kbase_alloc_phy_pages_helper` 分配流程
+
+文字步骤（与下图对应）：
+
+1. 校验 `alloc` 为 NATIVE、`group_id` 合法；若有 `reg` 则请求量不超过剩余 VA 容量。
+2. **`mem_account_inc(kctx, nr_pages_requested)`**（先按请求量记账，便于 OOM 可见；后面按实际占用修正）。
+3. 若开启大页且 `nr_left ≥ 512`：  
+   - 用 **`kbase_mem_pool_alloc_pages(large[gid], …)`** 尽量整颗 2MB 拿；  
+   - 仍有余量 → 扫 **`kctx->mem_partials`**，从已拆开的 2MB 里 `FROM_PARTIAL` 抠 4K；  
+   - 若余量仍在 `(0, 512)` → **`kbase_mem_pool_alloc(large)`**（不够则 `grow`）拿一颗新 2MB，拆成 partial 用掉需要的子页，剩余挂回 `mem_partials`（整颗 2MB 计入 `nr_pages_to_account`）。
+4. 若还有 `nr_left`：用 **`kbase_mem_pool_alloc_pages(small[gid], nr_left, …)`** 补小页；失败则回滚已成功的大页部分并 `mem_account_dec`，返回 `-ENOMEM`。
+5. `alloc->nents += nr_pages_requested`；若实际记账页（含整颗大页）与请求不等则再 `mem_account_inc/dec` 修正。
+
+```mermaid
+flowchart TD
+  A["kbase_alloc_phy_pages_helper(alloc, nr)"] --> B["mem_account_inc(nr)"]
+  B --> C{"大页开启 且 nr_left ≥ 512?"}
+  C -->|否| S["kbase_mem_pool_alloc_pages<br/>small[group_id], nr_left"]
+  C -->|是| D["kbase_mem_pool_alloc_pages<br/>large[group_id], 整颗 2MB × N"]
+  D --> E{"nr_left > 0?"}
+  E -->|否| Z["更新 nents + 修正 used_pages"]
+  E -->|是| F["扫 mem_partials：FROM_PARTIAL 抠子页"]
+  F --> G{"0 < nr_left < 512?"}
+  G -->|否且 nr_left≥512| S
+  G -->|是| H["kbase_mem_pool_alloc/grow(large)<br/>新 2MB → 建 sub_alloc partial"]
+  H --> I["用掉所需子页，余量挂 mem_partials<br/>nr_pages_to_account += 512"]
+  I --> S
+  G -->|nr_left==0| Z
+  S --> T{"small 成功?"}
+  T -->|是| Z
+  T -->|否| U["回滚已分配大页 + mem_account_dec → -ENOMEM"]
+  Z --> V["return 0"]
+```
+
+收益：尽量让 MMU 用 L2 大页项（第 7 章）减少 TLB miss；partial 避免「只要几页 4K 却浪费整颗 2MB 却无法再利用」。
+
+#### 取页 / 还页顺序（`kbase_mem_pool_alloc_pages` 三级 fallback）
+
+helper 最终落到池层时，**单个池**内部顺序如下（large / small 各自一套 `next_pool` 链）：
 
 ```mermaid
 flowchart LR
@@ -639,62 +928,174 @@ flowchart LR
   J -->|满| L["mgm_free_page 还给内核"]
 ```
 
-`kbase_alloc_phy_pages_helper`（`mali_kbase_mem.c:1124-1319`）的 2MB 策略：`nr_left >= 512` 且大页开启 → 先从 `large` 池整 2MB 拿；余量先扫 `kctx->mem_partials`（已拆开的 2MB 页，`mem_partials_lock`）用 `kbase_sub_alloc` 补（打 `FROM_PARTIAL`）；不足且无 partial 时再向 large 池要一个 2MB 拆开；最后不足 512 的尾巴从 `small` 池拿。失败回滚已成功部分。这样做的收益是 MMU 用 L2 大页项（第 7 章）减少 TLB miss。
-
 物理页的实际分配/释放通过 **memory group manager**（`kbdev->mgm_dev->ops`：`mgm_alloc_page / mgm_free_page / mgm_vmf_insert_pfn_prot / mgm_update_gpu_pte`）；无平台 MGM 时用 `mali_kbase_native_mgm.c` 的默认实现（`:155-159`，`alloc_pages` 包装）。平台 MGM 可以把不同 `group_id` 映射到不同物理池（如 protected、特定 DDR 通道）并改写 PTE 高位（PBHA，见 6.7）。
 
 页池有 shrinker（`kbase_mem_pool_init`，`mali_kbase_mem_pool.c:529-555`）：内存紧张时 `kbase_mem_pool_reclaim_scan_objects` 把空闲页还给内核。
 
 **与 `gpu_memory` 的关系**：页在池中空闲时**不**计入 `used_pages`；真正占用统计、以及 Infinite Cache 下 `cpu_alloc`/`gpu_alloc` 双计导致 `gpu_memory` 约 2× profile 的分析见 **第 16 章**。
 
-### 6.3 `MEM_ALLOC`、`commit_pages` 与物理页多少
+### 6.3 用户态如何分配 GPU 内存：虚地址大小、立刻提交的物理页，以及一次 `MEM_ALLOC` 走完的路径
 
-#### `va_pages` / `commit_pages` / `extension`
+本节回答：用户调用 `MEM_ALLOC` 时，三个大小相关参数各自控制什么；native 分配最终会立刻拿到多少物理页；以及从 ioctl 到写 GPU 页表（或挂起等 mmap）的完整顺序。页池怎么取页见 6.2；zone / SAME_VA 的虚地址预算见 6.1。
 
-`MEM_ALLOC` 与大小相关的三个用户参数：
+#### 三个大小参数分别表示什么
 
-| 参数 | 含义 |
-|------|------|
-| **`va_pages`** | 要占的 **GPU 虚拟地址** 页数（region / “地皮”多大） |
-| **`commit_pages`** | 现在立刻申请多少 **物理页**（backing / “先盖几层”） |
-| **`extension`** | 可增长时，每次缺页/增长步进多少页 |
+用户态在 `MEM_ALLOC`（及 `_ex`）里会带上与「这块内存有多大」相关的三个字段，驱动在 `kbase_check_alloc_sizes` 等处校验它们：
 
-必须满足 `0 ≤ commit_pages ≤ va_pages`（另有 `va_pages ≤ KBASE_MEM_ALLOC_MAX_SIZE` 等校验，`kbase_check_alloc_sizes`）。`kbase_alloc_phy_pages(reg, va_pages, commit_pages)`（`mali_kbase_mem.c:1875`）只为 `commit_pages` 从页池拿物理页，记入 `gpu_alloc->nents`，并设 `reg->initial_commit = commit_pages`。
+| 参数 | 完整含义 |
+|------|----------|
+| **`va_pages`** | 在 GPU 虚地址空间里预留多少页。决定 region 的「地皮」有多大，也就是以后最多能映射到多大的 GPU VA 范围；**此时不一定已经有等量的物理页**。 |
+| **`commit_pages`** | **此刻**就要从页池申请多少物理页作为 backing。驱动只会为这个数量调用 `kbase_alloc_phy_pages`，结果记在 `gpu_alloc->nents`，并把 `reg->initial_commit` 设成该值。 |
+| **`extension`** | 若这块区域允许按缺页增长（例如带 `BASE_MEM_GROW_ON_GPF`），则 GPU 发生可恢复的 page fault 时，每次按这个步进去补物理页；补完后总量仍不能超过 `va_pages`。 |
 
-**物理页数量主要由谁决定（native 分配）**：
+三者必须满足 `0 ≤ commit_pages ≤ va_pages`，且 `va_pages` 还受 `KBASE_MEM_ALLOC_MAX_SIZE` 等上限约束。入口函数是 `kbase_alloc_phy_pages(reg, va_pages, commit_pages)`（`mali_kbase_mem.c:1875`）：第二个参数用于校验「提交量不能大于虚地址容量」，真正向池子要页的数量是第三个参数 `commit_pages`。
 
-1. **用户态 `MEM_ALLOC` 的 `commit_pages`（主因）**——驱动校验后按此数分配。常见：`commit == va` 一次全 backing；`commit < va` + `BASE_MEM_GROW_ON_GPF` 先少后多；若配置要求 GPF 全 backing，驱动会把 `commit_pages` 改成 `va_pages`。
-2. **之后可变**：`MEM_COMMIT` 主动增减已提交页；`GROW_ON_GPF` + MMU page fault 时按 `extension` 补页，总量仍 ≤ `va_pages`。当前物理页数约等于 `alloc->nents`。
-3. **不走 `commit_pages` 的路径**：dma-buf import（UMM）用对方已有页；user buffer import pin 用户页；alias 复用已有 region；JIT 有自己的 va/commit 与压力上限。
+#### 实际物理页数量由什么决定
 
-Zone / SAME_VA 大小只限制 VA 预算，**不等于**已经申请了多少物理页；物理还受页池、MGM、系统内存约束。
+对 **native** 分配（驱动自己从 mem pool / buddy 拿页）而言：
 
-#### `MEM_ALLOC` 完整流程
+1. **第一次分配时，以用户态给出的 `commit_pages` 为主。** 驱动校验通过后就按这个数分配。常见用法包括：`commit_pages == va_pages`，一次把虚地址范围全部 backing 满；或者 `commit_pages < va_pages` 且打开 `BASE_MEM_GROW_ON_GPF`，先少提交、以后缺页再涨。若平台/配置要求「可增长区域也必须一开始就全 backing」，驱动会在内部把 `commit_pages` 改成等于 `va_pages`。
+2. **分配之后，已提交物理页还可以变。** 用户可再调 `MEM_COMMIT` 主动增减；若启用了 grow-on-GPF，MMU page fault 路径会按 `extension` 补页。无论怎么变，当前已 backing 的页数大致就是对应 `alloc->nents`，且不能超过当初的 `va_pages`。
+3. **有些路径根本不由本次 `commit_pages` 决定物理页从哪来。** 例如 dma-buf（UMM）导入使用导出方已有的页；user buffer 导入则 pin 用户进程里已有的页；alias 只是复用已有 region 的片段；JIT 有自己的虚地址/提交与压力上限（见 6.6）。
 
-`kbase_api_mem_alloc_ex`（CSF；`core_linux.c:951-1041`）/ `kbase_api_mem_alloc`（JM，转调 `_ex`）先处理 FIXED/FIXABLE 互斥计数、64 位非 compat 强制 `SAME_VA`、CSF event 内存强制 `SAME_VA|CACHED_CPU|COHERENT_SYSTEM`，然后进入 `kbase_mem_alloc()`（`mali_kbase_mem_linux.c:297-500`）：
+还要注意：第 6.1 节里 SAME_VA / zone 算出来的巨大上限，只是 **虚地址能划多大**；它 **不等于** 已经向系统要了多少物理内存。物理页还要受 mem pool、memory group manager 和系统可用内存限制。
+
+#### 一次 `MEM_ALLOC` 里：区域对象如何逐步填字段，并得到 GPU 虚地址
+
+每次 `MEM_ALLOC` 都会 **新建一个** `struct kbase_va_region`（代码里指针常叫 `reg`），**不是**全局唯一、也不是「在已有区域内部再挑一个虚地址」。它代表「这一次分配出来的那一块 GPU 内存」（一段 GPU 虚地址 + 已提交物理页 + 映射关系；物理页来自系统内存/页池，一般不是 GPU 片上私有显存）。虚地址范围、权限、物理页绑定等都会逐步写进这个对象；一个 `kbase_context` 里可以同时存在很多个。`kbase_gpu_mmap` 是给**这个新建对象**在所属 zone 里占用一段虚地址并写入 `start_pfn`，而不是在 `reg` 里再选点。
+
+下图按 `kbase_mem_alloc`（`mali_kbase_mem_linux.c:297` 起）的真实顺序，标出各步骤往这个区域对象里 **填写了哪些关键字段**（非 SAME_VA 自动选址路径；SAME_VA 在 ioctl 阶段不写最终 `start_pfn`，见下一小节）。调用关系：非 SAME_VA 时 **`kbase_mem_alloc` 内直接调用 `kbase_gpu_mmap`（约 `:492`）**；SAME_VA 时 ioctl 阶段不调用，改到用户 `mmap(cookie)` → `kbasep_reg_mmap`（约 `:2723`）再调。
 
 ```mermaid
 flowchart TD
-  A["kbase_check_alloc_flags + 协调 COHERENT + kbase_check_alloc_sizes"] --> B["选 zone（6.1）"]
-  B --> C["kbase_ctx_alloc_free_region：拿一个 region 结构（此时未入树）"]
-  C --> D["kbase_update_region_flags：BASE_MEM_* → KBASE_REG_*、memattr、cache 属性"]
-  D --> E["kbase_reg_prepare_native：建 cpu_alloc/gpu_alloc（NATIVE）"]
-  E --> F["设 threshold_pages（GROW_ON_GPF）/ extension"]
-  F --> G["kbase_alloc_phy_pages(reg, va_pages, commit_pages)<br/>= 6.2 的 helper；initial_commit = commit_pages"]
-  G --> H["kbase_gpu_vm_lock_with_pmode_sync"]
-  H --> I{"BASE_MEM_SAME_VA?"}
-  I -->|是| J["从 kctx->cookies 位图取一位<br/>pending_regions[cookie] = reg<br/>返回 gpu_va = (cookie + PFN_DOWN(BASE_MEM_COOKIE_BASE)) << PAGE_SHIFT<br/>此时 GPU 页表未写"]
-  I -->|否| K["计算对齐（大页 / 4GB 边界）<br/>kbase_gpu_mmap(kctx, reg, gpu_va, va_pages, align)<br/>= 写 PTE + kbase_add_va_region 入树，返回真实 GPU VA"]
-  J -.->|用户随后 mmap(cookie)| L["kbase_context_mmap → kbasep_reg_mmap<br/>取 pending_regions[cookie]<br/>kbase_gpu_mmap 到 vma->vm_start（GPU VA == CPU VA）<br/>归还 cookie；kbase_cpu_mmap 建 CPU 侧"]
+  S0["开始：用户 ioctl 带入 va_pages / commit_pages / extension / flags"] --> S1
+
+  S1["① 选择 VA zone<br/>SAME_VA / CUSTOM_VA / EXEC_VA / FIXED 等"] --> S2
+
+  S2["② kbase_ctx_alloc_free_region<br/>新建区域对象 reg"] --> S2a["此时已填写：<br/>nr_pages ← va_pages<br/>rbtree ← 该 zone 的树<br/>flags ← zone 位 | KBASE_REG_FREE | GROWABLE<br/>start_pfn ← 传入初值（非 FIXED 时常为 0）<br/>cpu_alloc / gpu_alloc ← NULL<br/>va_refcnt ← 1"]
+  S2a --> S3
+
+  S3["③ kbase_update_region_flags"] --> S3a["填写 / 更新 flags：<br/>CPU/GPU 读写、cache、NX、<br/>memattr、SAME_VA、GROW_ON_GPF 等<br/>（清掉 FREE，成为正式分配标志）"]
+  S3a --> S4
+
+  S4["④ kbase_reg_prepare_native"] --> S4a["填写：<br/>cpu_alloc、gpu_alloc<br/>（Infinite Cache + CPU_CACHED 时两者分离）"]
+  S4a --> S5
+
+  S5["⑤ 可增长相关"] --> S5a["填写：<br/>extension ← 用户 extension<br/>threshold_pages 等（若 GROW_ON_GPF）"]
+  S5a --> S6
+
+  S6["⑥ kbase_alloc_phy_pages(reg, va_pages, commit_pages)"] --> S6a["填写：<br/>gpu_alloc/cpu_alloc 的 pages[]、nents<br/>reg->initial_commit ← commit_pages<br/>（物理页已备好，GPU 虚地址可能仍未最终确定）"]
+  S6a --> S7
+
+  S7{"⑦ SAME_VA？"}
+  S7 -->|是| S8["挂 cookie：pending_regions[i]=reg<br/>出参 *gpu_va ← cookie 地址<br/>start_pfn 仍待用户 mmap 时再定"]
+  S7 -->|否| S9["⑧ kbase_gpu_mmap(kctx, reg, addr, …)<br/>addr 多为 0，或 FIXED 时为指定地址"]
+
+  S9 --> S9a["内部 kbase_add_va_region：<br/>在 zone 空闲区间中占用一段 GPU 虚地址<br/>填写 reg->start_pfn ← 基页号<br/>并把 reg 插入 zone 红黑树"]
+  S9a --> S9b["再按 start_pfn 写 GPU 页表 PTE"]
+  S9b --> S10["⑨ 仍在 kbase_mem_alloc 内：<br/>*gpu_va ← reg->start_pfn << PAGE_SHIFT<br/>（出参返回真实 GPU 虚地址）"]
 ```
 
-为什么 SAME_VA 要"先 cookie 后 mmap"：GPU VA 要等于 CPU VA，而 CPU VA 只有在 `mmap()` 时由内核 `get_unmapped_area` 决定（`kbase_context_get_unmapped_area`，`thirdparty/mali_kbase_mmap.c:407`，会按 2MB / GPU PC 位数 / 4GB 边界对齐），所以 ioctl 阶段只能先把 region 挂起来。SAME_VA 下物理页常在 alloc 时已按 `commit_pages` 备好，只是 GPU PTE 可能等到 mmap 才写。
+字段填写一览（便于对照源码）：
 
-`kbase_gpu_mmap`（`mali_kbase_mem.c:315`）：ALIAS 类型走 `kbase_mmu_insert_aliased_pages`，否则 `kbase_mmu_insert_pages(_skip_status_update)`，然后 `kbase_add_va_region` 入 rbtree。
+| 步骤 | 主要写入区域对象的内容 |
+|------|------------------------|
+| 新建 `reg` | `nr_pages`、所属 zone / `rbtree`、初始 `flags`（含 FREE）、可选初始 `start_pfn` |
+| 更新 flags | 权限、cache、memattr、是否可增长等 |
+| prepare native | `cpu_alloc`、`gpu_alloc` |
+| 可增长设置 | `extension`、`threshold_pages`… |
+| 申请物理页 | alloc 的 `pages[]` / `nents`；`initial_commit` |
+| `kbase_gpu_mmap`（非 SAME_VA） | **最终 `start_pfn`**、入树、GPU PTE |
+| 出参 | `*gpu_va`（非 SAME_VA：真实 GPU VA；SAME_VA：cookie） |
 
-### 6.4 CPU 侧映射与惰性缺页
+#### 一次 `MEM_ALLOC` 从 ioctl 到可映射的完整流程
 
-`kbase_cpu_mmap`（`mali_kbase_mem_linux.c:2499`）只建 vma、挂 `kbase_vm_ops`（`:2495-2497`：`open=kbase_cpu_vm_open`、`close=kbase_cpu_vm_close`、`fault=kbase_cpu_vm_fault`），**不预先填 CPU 页表**；CPU 首次访问触发 `kbase_cpu_vm_fault` → `mgm_dev->ops.mgm_vmf_insert_pfn_prot`（`:2478`）按需插 PFN。内核态需要读写 GPU 内存时用 `kbase_vmap / kbase_vmap_prot / kbase_vunmap`（`:3158-3265`）。
+CSF 下入口是 `kbase_api_mem_alloc_ex`（`core_linux.c:951-1041`）；JM 的 `kbase_api_mem_alloc` 会转到同一套 `_ex` 逻辑。进入核心前，驱动会先处理 FIXED/FIXABLE 的互斥计数、在 64 位非 compat 进程上强制 `SAME_VA`、以及对 CSF event 内存强制 `SAME_VA | CACHED_CPU | COHERENT_SYSTEM` 等策略，然后进入 `kbase_mem_alloc()`（`mali_kbase_mem_linux.c:297-500`）。该函数内部顺序如下图（与上一小节同一路径，此处侧重分支与后续 mmap）。
+
+下面流程图里的 **区域对象** 均指本次新建的 `struct kbase_va_region`（指针名常为 `reg`）。**`*gpu_va`** 是 `kbase_mem_alloc` 的出参，最终写回 ioctl，交给用户态。
+
+```mermaid
+flowchart TD
+  A["校验分配 flags、协调 cache 一致性标志、<br/>并检查 va/commit/extension 尺寸合法"] --> B["按 flags 选择 VA zone<br/>（SAME_VA / CUSTOM_VA / EXEC_VA / FIXED 等，见 6.1）"]
+  B --> C["kbase_ctx_alloc_free_region：得到 reg<br/>（此时尚未插入对应 zone 的红黑树）"]
+  C --> D["把用户 BASE_MEM_* flags 转成驱动内部<br/>KBASE_REG_*、memattr 与 CPU/GPU cache 属性"]
+  D --> E["kbase_reg_prepare_native：创建 cpu_alloc / gpu_alloc<br/>（Infinite Cache 时二者可能分离，见 6.2 / 16 章）"]
+  E --> F["若可增长：记录 threshold_pages 与 extension"]
+  F --> G["按 commit_pages 调用 kbase_alloc_phy_pages<br/>（内部走 6.2 的 helper），并记下 initial_commit"]
+  G --> H["取得 GPU VA 相关锁（含 CSF 下与 protected mode 的同步）"]
+  H --> I{"是否要求 SAME_VA？"}
+  I -->|是| J["从 cookies 位图借编号 cookie_nr<br/>pending_regions[cookie_nr] = reg<br/>*gpu_va = 编码后的 cookie 地址<br/>（此时通常尚未调用 kbase_gpu_mmap，也尚未写 GPU 页表）"]
+  I -->|否<br/>非 FIXED 时此前常把 *gpu_va 置 0| K["按大页等规则计算 align<br/>调用 kbase_gpu_mmap(kctx, reg, addr, …)<br/>addr 多为 0，或 FIXED 时为用户指定地址"]
+  K --> K1["kbase_gpu_mmap 内部：kbase_add_va_region<br/>addr≠0：占用指定 GPU 虚地址<br/>addr==0：在该 zone 空闲区间中分配<br/>结果写入 reg->start_pfn；再写 GPU PTE 并插入红黑树"]
+  K1 --> K2["仍在 kbase_mem_alloc 内、kbase_gpu_mmap 返回成功之后：<br/>*gpu_va = reg->start_pfn << PAGE_SHIFT<br/>（出参带回真实 GPU 虚地址；kbase_gpu_mmap 的返回值只是成功/失败）"]
+  J -.->|用户随后 mmap(cookie)| L["kbase_context_mmap → kbasep_reg_mmap：取出 reg<br/>→ kbase_gpu_mmap(..., vma->vm_start, …)<br/>→ 归还 cookie → kbase_cpu_mmap（见 6.4）"]
+```
+
+**cookie 是什么？**  
+SAME_VA 下 ioctl 还拿不到最终 CPU/GPU 虚地址，于是从 `kctx->cookies` 位图借一个编号，令 `pending_regions[编号] = 本次区域对象指针`，并把编号编码进 `BASE_MEM_COOKIE_BASE` 区间作为**临时领取凭证**写给出参 `*gpu_va`。用户对该凭证做 `mmap` 时，驱动用编号取出同一区域对象再映射。cookie **不是**最终 GPU 虚地址，也不是物理页；每 context 同时未兑现的 cookie 数量受位图位数限制。
+
+**为什么 SAME_VA 路径要「先返回 cookie，再等用户 mmap」？**  
+因为 SAME_VA 要求 GPU 虚地址与 CPU 虚地址相同，而 CPU 虚地址只有在进程调用 `mmap()` 时，才由内核的 `get_unmapped_area`（本驱动里是 `kbase_context_get_unmapped_area`，`thirdparty/mali_kbase_mmap.c:407`，会按 2MB、GPU PC 位数、4GB 边界等对齐）真正定下来。所以 ioctl 阶段只能先把区域对象和已申请的物理页挂在 cookie 上；用户随后 `mmap(cookie)` 时再调用 `kbase_gpu_mmap`，把 GPU 页表映射到与 CPU VMA 相同的地址。SAME_VA 下物理页往往在 alloc 时就已按 `commit_pages` 备好，缺的是 GPU PTE（以及 CPU 侧惰性插页，见 6.4）。非 SAME_VA 的 GPU 虚地址**一般不是**这次 `mmap` 的返回值；ioctl 里已通过 `kbase_gpu_mmap` 在 CUSTOM 等 zone 里定好。
+
+**`kbase_gpu_mmap` 与出参 GPU 虚地址的关系**（`mali_kbase_mem.c:315`；非 SAME_VA 路径）：  
+
+1. 为传入的 `reg` **选定并占用**一段 GPU 虚地址（参数 `addr` 非 0 则用指定地址；为 0 则经 `kbase_add_va_region` / `kbase_add_va_region_rbtree` 在对应 zone 的空闲区间中分配），结果记在 **`reg->start_pfn`**。  
+2. 按该地址建立 GPU 页表映射（ALIAS 走 `kbase_mmu_insert_aliased_pages`，否则 `kbase_mmu_insert_pages` 等），并把 `reg` 插入 zone 红黑树。  
+3. 函数 **`return` 只表示成功或失败**；并不通过返回值交出 GPU 虚地址。  
+4. **仍在 `kbase_mem_alloc` 函数体内**、在 `kbase_gpu_mmap` 成功返回之后，执行 `*gpu_va = reg->start_pfn << PAGE_SHIFT`，把该地址经出参交给 ioctl 调用方。  
+
+因此：**不是**「等 `kbase_mem_alloc` 整个返回之后再写 `*gpu_va`」；而是「`kbase_mem_alloc` 里先成功跑完 `kbase_gpu_mmap`，再立刻用出参写出 GPU 虚地址」。
+
+### 6.4 CPU 侧如何建立映射，以及为何可以拖到第一次访问再填 CPU 页表
+
+用户态若要通过 **CPU 虚地址** 访问某块 GPU 内存，会对该 `/dev/mali*` 文件调用 **`mmap` 系统调用**。驱动并不提供单独的「cpu_mmap ioctl」：`mmap` 经 `file_operations.mmap = kbase_mmap` 进入驱动，多数普通缓冲路径的末尾再调用 **`kbase_cpu_mmap`**，把内核建好的 `vma` 绑到 Mali 的 CPU 映射逻辑上。`kbase_cpu_mmap` 与 `mmap` 的关系是 **「系统调用入口 → … → 驱动收尾函数」**，不是并列的两套用户接口。
+
+#### `mmap` / `kbase_gpu_mmap` / `kbase_cpu_mmap` 三者对比
+
+| | **`mmap`（系统调用）** | **`kbase_gpu_mmap`** | **`kbase_cpu_mmap`** |
+|---|---|---|---|
+| **是什么** | 用户态/内核通用的「在进程地址空间建一段 VMA」入口 | 驱动内部函数：把 region 的物理页写进 **GPU 页表**，并插入 GPU VA 红黑树 | 驱动内部函数：给已有 `vma` 挂上 Mali 的 `vm_ops`，建立 **CPU 访问** 这块缓冲的通路 |
+| **谁调用** | 用户态（libmali 等）对 `/dev/mali*` 调 `mmap` → `kbase_mmap` → `kbase_context_mmap` | ① 非 SAME_VA：`MEM_ALLOC` 里直接调；② SAME_VA：用户 `mmap(cookie)` 路径里的 `kbasep_reg_mmap` 再调 | `kbase_context_mmap` 在解析好 region、且（需要时）做完 GPU 映射之后调用 |
+| **作用对象** | 进程的 **CPU 虚地址空间**（得到 `vma`） | **GPU MMU / GPU VA**（`reg->start_pfn` 等） | 同一个 `vma` 的 CPU 侧行为（缺页时插 PFN） |
+| **结果** | 用户拿到一块 CPU VA；驱动根据 `vm_pgoff` 判断映射的是 cookie、已有 GPU VA 还是别的 handle | GPU 能按该 GPU VA 访存；非 SAME_VA 时 ioctl 直接返回真实 GPU VA | CPU 之后读/写该 VMA 会走 `kbase_cpu_vm_fault` 惰性填 CPU 页表 |
+| **管不管物理页从哪来** | 不管（物理页多半已在 `MEM_ALLOC` / `commit` 备好） | 不管分配，只负责 **映射进 GPU 页表** | 不管分配，只负责 **CPU 怎么映射到已有物理页** |
+
+一句话：**`kbase_gpu_mmap` 让 GPU 看见这块内存；`kbase_cpu_mmap` 让 CPU 通过 VMA 看见这块内存；`mmap` 是用户触发「在进程里建 VMA」的系统调用，驱动在里面按需调用前两者。**
+
+与 SAME_VA / 非 SAME_VA 的配合关系：
+
+| 步骤 | 非 SAME_VA | SAME_VA |
+|------|------------|---------|
+| `MEM_ALLOC` | 在 ioctl 里调用 **`kbase_gpu_mmap`**，立刻得到真实 GPU VA | 只挂 cookie，**此时通常还不调** `kbase_gpu_mmap` |
+| 用户再 `mmap` | 若需要 CPU 访问再 `mmap`；驱动查找已有 region 后做 **`kbase_cpu_mmap`**（GPU 映射往往已在） | `mmap(cookie)` 里先 **`kbase_gpu_mmap`（地址 = vma 起点）**，再 **`kbase_cpu_mmap`** |
+| 只要 GPU、不要 CPU | 可以只有 ioctl 的 `kbase_gpu_mmap`，不必再 `mmap` | 必须再 `mmap` 才能兑现 VA（GPU 与 CPU 落在同一地址） |
+
+#### 从 `mmap` 到 `kbase_cpu_mmap` 的调用过程
+
+```mermaid
+flowchart TD
+  U["用户态：mmap(fd=/dev/mali*, …, offset)"] --> V["VFS / mm：根据 filp->f_op->mmap"]
+  V --> A["kbase_mmap（core_linux.c）<br/>校验 owner，取出 kctx"]
+  A --> B["kbase_context_mmap(kctx, vma)<br/>（mem_linux.c）"]
+  B --> C{"按 vma->vm_pgoff（用户传入的 offset）分支"}
+  C -->|BASE_MEM_COOKIE_BASE 区间<br/>SAME_VA 兑现| D["kbasep_reg_mmap：取出 pending_regions[cookie]<br/>→ kbase_gpu_mmap（GPU VA = vma 起点）<br/>→ 归还 cookie"]
+  C -->|已有 GPU VA<br/>（非 SAME_VA 等二次映射）| E["region_tracker 按地址查找 reg<br/>（GPU 映射往往在 MEM_ALLOC 时已做完）"]
+  C -->|CSF user I/O / user reg 等| F["专用路径（如 kbase_csf_cpu_mmap_user_io_pages）<br/>通常不再走到 kbase_cpu_mmap"]
+  C -->|IMPORTED_UMM| G["dma_buf_mmap，直接交给导出方<br/>不走 kbase_cpu_mmap"]
+  D --> H["kbase_cpu_mmap(kctx, reg, vma, …)<br/>（mem_linux.c:2499；普通路径汇合点）"]
+  E --> H
+  H --> I["挂上 kbase_vm_ops：open / close / fault<br/>此时仍不预先填满 CPU 页表"]
+  I --> J["CPU 首次访问该 VMA<br/>→ kbase_cpu_vm_fault<br/>→ mgm_vmf_insert_pfn_prot 按需插 PFN"]
+```
+
+要点：
+
+- **`mmap`**：用户发起「在本进程建一段可访问虚存」。
+- **`kbase_mmap` / `kbase_context_mmap`**：解析这段 VMA 对应哪块 GPU 内存（cookie、已有 GPU VA、或特殊 handle）；SAME_VA 时在这里补上 `kbase_gpu_mmap`。
+- **`kbase_cpu_mmap`**：在已经确定 `reg`（且需要时 GPU 侧已映射）之后，给该 `vma` 设置 `kbase_vm_ops`（`:2495-2497`：`open=kbase_cpu_vm_open`、`close=kbase_cpu_vm_close`、`fault=kbase_cpu_vm_fault`），**仍然不预先填 CPU 页表**；真正插 PFN 拖到第一次缺页（上图末节点）。
+- 内核态临时映射 GPU 内存用 `kbase_vmap / kbase_vmap_prot / kbase_vunmap`（`:3158-3265`），与用户 `mmap` 路径不同。
+
+#### 解除映射与释放
 
 `kbase_cpu_vm_close`（`:2349`）→ `kbase_va_region_alloc_put`（`:2376`）递减 `va_refcnt`，归零才真正释放 region 与物理页。**这就是 SAME_VA 内存不能用 `MEM_FREE` 释放的原因**：`kbase_mem_free`（`mali_kbase_mem.c:934-995`）对 `SAME_VA_ZONE` 直接 `-EINVAL`（`:982-988`），必须 `munmap()`；对 cookie 区间的地址（还没 mmap 过的）则直接从 `pending_regions[]` 摘除归还 cookie。非 SAME_VA 走 `kbase_mem_free_region`（`:864-919`）：`no_user_free` 检查 → `DONT_NEED` 的先 `kbase_mem_evictable_unmake` → `kbase_gpu_munmap`（拆 PTE + 出树）→ CSF FIXED 计数递减 → `kbase_free_alloced_region`。
 
@@ -702,7 +1103,7 @@ flowchart TD
 
 | ioctl | 函数 | 要点 |
 |---|---|---|
-| `MEM_COMMIT` | `kbase_mem_commit`（`mem_linux.c:2141`） | 对 GROWABLE native region 改变已提交页数：增 → `kbase_alloc_phy_pages_helper` + `kbase_mem_grow_gpu_mapping`（`:2094`）；减 → `kbase_mem_shrink`（`:2285`）拆 GPU/CPU 映射并还页 |
+| `MEM_COMMIT` | `kbase_mem_commit`（`mem_linux.c:2141`） | **由用户态（常见为 libmali）发 ioctl**，内核只执行。对 GROWABLE native region 改变已提交页数：增 → `kbase_alloc_phy_pages_helper` + `kbase_mem_grow_gpu_mapping`（`:2094`）；减 → `kbase_mem_shrink`（`:2285`）拆 GPU/CPU 映射并还页。注意：物理页变多也可能走 **GROW_ON_GPF 缺页补页**，那条路径**不经过**本次 `MEM_COMMIT` |
 | `MEM_IMPORT` | `kbase_mem_import`（`:1956`） | `UMM`（dma-buf）→ `kbase_mem_from_umm`（`:1456`）：`dma_buf_get/attach`，`CONFIG_MALI_DMA_BUF_MAP_ON_DEMAND` 时延迟到 GPU 真正用时才 `kbase_mem_umm_map`（`:1323`）；`USER_BUFFER` → `kbase_mem_from_user_buffer`（`:1601`）：pin 用户页 + dma_map（状态机 `EMPTY→PINNED→DMA_MAPPED→GPU_MAPPED`，`mali_kbase_mem.h:303-309`）；导入内存强制 `SAME_VA`（64 位）、USER_BUFFER 必须 `CACHED_CPU` |
 | `MEM_ALIAS` | `kbase_mem_alias`（`:1735`） | 把多个已存在 region 的片段按 stride 拼成一个新 GPU VA（ALIAS 类型），映射走 `kbase_mmu_insert_aliased_pages` |
 | `MEM_FLAGS_CHANGE` | `kbase_mem_flags_change`（`:1069`） | 主要用于 `BASE_MEM_DONT_NEED` 开关 → `kbase_mem_evictable_make/unmake`（6.6）；UMM 的 coherency 变更走 `kbase_mem_flags_change_imported_umm` |
@@ -735,7 +1136,7 @@ JIT 压力限制（`MALI_JIT_PRESSURE_LIMIT_BASE`）：`kbase_jit_trim_necessary
 - **页迁移**（`CONFIG_PAGE_MIGRATION_SUPPORT`，`mali_kbase_mem_migrate.c`）：让内核 compaction 能移动 GPU 正在用的页。每页有 `kbase_page_metadata`（`mali_kbase_mem.h:463-497`：`dma_addr`、`migrate_lock`、`status`、`vmap_count`、`group_id`），状态 `enum kbase_page_status`（`:428-438`）：`MEM_POOL / ALLOCATE_IN_PROGRESS / SPILL_IN_PROGRESS / NOT_MOVABLE / ALLOCATED_MAPPED / PT_MAPPED / FREE_IN_PROGRESS / FREE_ISOLATED_IN_PROGRESS / FREE_PT_ISOLATED_IN_PROGRESS`。`kbase_page_isolate / migrate / putback`（`:341,445,553`）通过 `movable_operations`（≥6.0）注册；`ALLOCATED_MAPPED` 页迁移时要改 GPU PTE（`kbase_mmu_migrate_page`），`PT_MAPPED` 页（页表本身）也可迁移。`kbase_mem_migrate_init`（`:662`）用 static key 开关。
 - **PBHA**（Page-Based Hardware Attributes，`mali_kbase_pbha.c`）：从 DT 读 `kbase_pbha_read_dtb`（`:315`），`kbase_pbha_write_settings`（`:214`）把各功能块（`SYSC_ALLOC_ID_R_TILER_VERT / _MMU / _IC / _LSC` 等，`:35-50`）的 L2 分配策略（`SYSC_ALLOC_L2_ALLOC / NEVER_ALLOC / ALWAYS_ALLOC / PTL_ALLOC / L2_PTL_ALLOC`）写进 GPU 寄存器；PTE 中的 PBHA 位由 MGM 的 `mgm_update_gpu_pte` 填。L2 上电时重写（第 8 章 L2 状态机 `OFF→PEND_ON` 处调用）。
 - **GWT**（GPU Write Tracking，`mali_kbase_gwt.c`，`CONFIG_MALI_CINSTR_GWT`）：`kbase_gpu_gwt_start`（`:63-95`）把 SAME_VA/CUSTOM_VA 里所有可写 region 通过 `kbase_mmu_update_pages` 改成只读，之后 GPU 写会触发 permission fault，fault handler 记录地址到 `gwt_current_list` 并恢复写权限；`CINSTR_GWT_DUMP` 读出。用于增量快照/调试。
-- **cache 策略**（`mali_kbase_cache_policy.c:38-51`）：`kbase_cache_enabled(flags)`：无 `BASE_MEM_UNCACHED_GPU` → `KBASE_REG_GPU_CACHED`；`BASE_MEM_CACHED_CPU` → `KBASE_REG_CPU_CACHED`。一致性由 `SHARE_IN/SHARE_BOTH` + memattr 索引控制，与设备 `system_coherency`（ACE / ACE-Lite / NONE，第 7.5 节）配合。
+- **cache 策略**（`mali_kbase_cache_policy.c:38-51`）：`kbase_cache_enabled(flags)`：无 `BASE_MEM_UNCACHED_GPU` → `KBASE_REG_GPU_CACHED`；`BASE_MEM_CACHED_CPU` → `KBASE_REG_CPU_CACHED`。一致性由 `SHARE_IN/SHARE_BOTH` + memattr 索引控制，与设备 `system_coherency`（ACE / ACE-Lite / NONE，第 7.6 节）配合。
 
 ### 6.8 锁
 
@@ -750,9 +1151,69 @@ JIT 压力限制（`MALI_JIT_PRESSURE_LIMIT_BASE`）：`kbase_jit_trim_necessary
 
 ## 7. MMU 与地址空间
 
-MMU 子系统负责：**把 kctx 的页表写成 GPU 能走的格式、在正确时机让硬件 AS 指向它、并把 GPU 侧的缺页/总线错误变成"补页"或"杀作业"。** 文件：`mmu/mali_kbase_mmu.c`（页表操作、fault worker）、`mali_kbase_mmu_hw_direct.c`（AS 寄存器命令）、`mali_kbase_mmu_mode_aarch64.c`（PTE 编码）、`backend/mali_kbase_mmu_{jm,csf}.c`（中断入口与 kill 策略差异）。
+MMU 子系统负责：**把 kctx 的页表写成 GPU 能走的格式、在正确时机让硬件 AS 指向它、并把 GPU 侧的缺页/总线错误变成"补页"或"杀作业"。** 文件：`mmu/mali_kbase_mmu.c`（页表操作、fault worker）、`mali_kbase_mmu_hw_direct.c`（AS 寄存器命令）、`mali_kbase_mmu_mode_aarch64.c`（PTE 编码）、`backend/mali_kbase_mmu_{jm,csf}.c`（中断入口与 kill 策略差异）。绑定/驱逐见第 3.6 节。
 
-### 7.1 页表格式
+### 7.1 GPU MMU、AS 与 `as_nr`（概念）
+
+#### GPU MMU 是什么
+
+**GPU MMU** = 做在 **GPU 芯片里** 的内存管理单元，专门给 **GPU 自己发出的访存**（读纹理、写 FB、MCU 访问共享页等）做 **GPU VA → 系统物理地址** 翻译。
+
+| | **CPU MMU** | **GPU MMU** |
+|---|---|---|
+| 在哪 | CPU 侧 | **GPU 里** |
+| 谁用 | CPU load/store、取指 | GPU / MCU 访存 |
+| 页表 | 进程 `mm_struct` | 每个 kctx 的 `kctx->mmu`（MCU 另有 `kbdev->csf.mcu_mmu`） |
+| 虚地址 | CPU VA | **GPU VA** |
+
+两套硬件、两套页表。SAME_VA 只约定「两边常选相同数字的虚地址」，**并不共用**同一个 MMU 或同一棵页表。驱动里的 `struct kbase_as` 是软件镜像；真正翻译的是芯片上的 GPU MMU。
+
+#### AS 不是「GPU 寄存器的物理地址」
+
+| | **GPU 寄存器 MMIO** | **AS（Address Space）** |
+|---|---|---|
+| 是什么 | CPU 访问 GPU 控制寄存器的映射窗口 | GPU MMU 的一套 **地址空间槽**（最多 16 个） |
+| 存在哪 | `kbdev->reg`（`ioremap`） | 硬件 `AS0…AS15`；软件 `kbdev->as[i]` |
+| 干什么 | CPU 读/写 JOB、MMU、PM 等 | 作业跑在某 AS 上时，用该槽的页表根做 VA→PA |
+
+**AS 在 GPU 上**；CPU 只通过 MMIO **配置**它。页表页本身在系统 DRAM 里。
+
+#### AS 配置寄存器配的是什么内容
+
+配置的是「这个槽怎么翻译」，**不是**把整本页表拷进寄存器。驱动 `kbase_mmu_setup`（`mali_kbase_defs.h:257-261`）三元组，由 `kbase_mmu_hw_configure`（`mmu_hw_direct.c:321`）写入：
+
+| 寄存器 | 内容 | 含义 |
+|---|---|---|
+| **`AS_TRANSTAB`** | 页表根的**物理地址**（及格式相关位） | GPU MMU 从这棵表开始走 |
+| **`AS_MEMATTR`** | 内存属性索引表 | PTE 里引用的 cache/share 等怎么解释 |
+| **`AS_TRANSCFG`** | 翻译模式与走表策略 | AArch64 4K/64K、UNMAPPED、IDENTITY；走表是否 cache / outer shareable 等 |
+
+写完发 **`AS_COMMAND_UPDATE`**。各级 PTE 在 DRAM 的页表页里；改映射改内存中的表再 FLUSH，换 kctx 上槽时主要改 `TRANSTAB` 等指向另一棵根。`as->current_setup` 是这三元组的软件副本。
+
+#### `AS_TRANSTAB` 指向什么（不是 CPU TLB）
+
+| 概念 | 是什么 | TRANSTAB 指它吗？ |
+|---|---|---|
+| **CPU TLB** | CPU 缓存已翻译结果的硬件小表 | **否** |
+| **CPU 进程页表** | `mm_struct` 那棵，CPU MMU 用 | **否** |
+| **GPU 页表** | `kctx->mmu`（根在 `mmut->pgd`），各级 PGD/PTE 从 `mem_pools`/buddy 分配的**普通 DDR 页** | **是** |
+
+因此：TRANSTAB = **GPU 页表根在系统内存中的物理地址**；与 CPU MMU/TLB **无共用**；也不是 SoC 上划死的专用「GPU 页表寄存器窗口」，而是普通物理页专用于存 PTE（`kbase_mmu_alloc_pgd`）。GPU 内部另有 GPU TLB 缓存翻译结果，那也不是 TRANSTAB。
+
+页表里 VA 一侧是软件选定的 **GPU 虚地址**（区域对象的 `start_pfn` 等）；**GPU MMU 只负责翻译，不负责生成 VA**。SAME_VA 路径下，该 GPU 虚地址与用户 `mmap` 得到的 CPU 虚地址为同一数值；非 SAME_VA 下两者通常独立。
+
+#### `kctx->as_nr` 是什么
+
+**当前占用的硬件 AS 槽编号**（整数 0…15），不是地址、也不是页表根。
+
+| 值 | 表示 |
+|---|---|
+| `0 … nr_hw_address_spaces-1` | 已占用 `kbdev->as[as_nr]`；该槽 `AS_TRANSTAB` 等已指向本 kctx 的 `mmu` |
+| `KBASEP_AS_NR_INVALID` | 未绑定（空闲、被驱逐、或尚未 retain） |
+
+与 `kbdev->as_to_kctx[i]` 成对。谁改它见 **3.6**：`retain_ctx` 绑槽并 `kbase_mmu_update`；`release_ctx` 标回 `as_free`（常惰性保留 `as_nr` 以便复用）；驱逐时原 kctx 置 INVALID。CSF 下 AS0 常为 MCU（`MCU_AS_NR`），用户 kctx 多用 1…15。页表内容始终在 `kctx->mmu`；换 `as_nr` 只是换「硬件哪套寄存器指向这棵表」。
+
+### 7.2 页表格式
 
 Midgard/AArch64 模式：**4 级**（`MIDGARD_MMU_LEVEL(0..3)`，`mali_kbase_defs.h:98-102`），每级 512 项（`KBASE_MMU_PAGE_ENTRIES`，`mmu/mali_kbase_mmu.h:28`），每项 8 字节，一页正好一级。`kbase_mmu_table`（`mali_kbase_defs.h:312-342`）：`pgd`（L0 物理地址）、`mmu_lock`（mutex）、`kctx`（MCU 页表为 NULL）、`group_id`、`scratch_mem`（teardown 逐级备份 + 待释放 PGD 列表）。
 
@@ -770,7 +1231,7 @@ PTE 编码由 `struct kbase_mmu_mode` 的函数指针抽象（`mali_kbase_defs.h
 
 AS 寄存器 setup（`kbase_mmu_get_as_setup`，JM `mmu_jm.c:33-49` / CSF `mmu_csf.c:33-49`）：`transtab = pgd & AS_TRANSTAB_BASE_MASK`；`transcfg = AS_TRANSCFG_MODE_AARCH64_4K`；`memattr` 按索引拼 `IMPL_DEF_CACHE_POLICY / FORCE_TO_CACHE_ALL / WRITE_ALLOC / OUTER_IMPL_DEF / OUTER_WA / NON_CACHEABLE`（CSF 多一个 `SHARED`）。禁用 AS 时 `transtab=0`、`transcfg=UNMAPPED`（`:71-81`）。
 
-### 7.2 插入、拆除、刷新
+### 7.3 插入、拆除、刷新
 
 ```mermaid
 flowchart TD
@@ -793,7 +1254,7 @@ flowchart TD
 
 HW 命令层（`mmu_hw_direct.c`）：`kbase_mmu_hw_do_lock/unlock/flush`（`:431-565`）写 `AS_COMMAND_LOCK / UNLOCK / FLUSH_PT / FLUSH_MEM`；`lock_region()`（`:88-155`）把 `(vpfn, nr)` 编码成"最小自然对齐区间"写 `AS_LOCKADDR`；每条命令后 `wait_ready()`（`:167-190`）轮询 `AS_STATUS.ACTIVE`，超时（`MMU_AS_INACTIVE_WAIT_TIMEOUT`）则置 `mmu_unresponsive` 并触发 GPU 复位。CSF 命中 `BASE_HW_ISSUE_GPU2019_3901` 时 flush 前后要做 workaround（`:277-317`）。
 
-### 7.3 Fault 处理
+### 7.4 Fault 处理
 
 ```mermaid
 flowchart TD
@@ -848,11 +1309,11 @@ flowchart TD
 - Kill 策略后端不同：JM 只杀"正在跑的这个 kctx 的 job"并禁 AS，kctx 本身还能继续提交；CSF 则把该 kctx 的所有 queue group 标为 fatal error 并 terminate，用户态收到 `BASE_GPU_QUEUE_GROUP_ERROR_FATAL` 后自行重建。bus fault 走 `kbase_mmu_bus_fault_worker`（`mmu.c:3961`）→ `kbase_gpu_report_bus_fault_and_kill`，同样按后端杀作业/组。
 - `KCTX_PAGE_FAULT_REPORT_SKIP` 用于进程退出期间抑制误报；`KCTX_AS_DISABLED_ON_FAULT` 让 ctx_sched 在 refcount 归零时彻底解绑 AS。
 
-### 7.4 锁
+### 7.5 锁
 
 `mmut->mmu_lock`（mutex，页表结构）> `kbdev->mmu_hw_mutex`（mutex，AS 寄存器序列）> `kbdev->hwaccess_lock`（spinlock，中断态可持）。`kbase_mmu_update` 要同时持后两把；`kbase_mmu_report_fault_and_kill`（JM）先 `mmu_hw_mutex` 再在内部拿 `hwaccess_lock`（`mmu_jm.c:150-159`）。上层 `kctx->reg_lock` 在 `mmu_lock` 之外。
 
-### 7.5 L2/MMU 配置与一致性
+### 7.6 L2/MMU 配置与一致性
 
 - `kbase_set_mmu_quirks`（`backend/gpu/mali_kbase_l2_mmu_config.c:78-115`）：按 `product_model` 查 `limits[]` 表（tBEx / tTRx / tNAx / tGOx / tNOx 等）设置 `L2_MMU_CONFIG` 里 MMU 读写最大 outstanding 数；ACE 一致性时置 `ALLOW_SNOOP_DISPARITY`。写回在 `kbase_pm_hw_issues_apply`（第 8 章）。
 - `kbase_cache_set_coherency_mode`（`backend/gpu/mali_kbase_cache_policy_backend.c:25-44`）：CSF 且 arch ≥ 12.0.1 写 `AMBA_ENABLE.COHERENCY_PROTOCOL`，否则写 `COHERENCY_ENABLE`；`kbase_amba_set_shareable_cache_support`（`:46-64`）。设备的 `system_coherency`（ACE / ACE_LITE / NONE）在 `kbase_device_coherency_init` 从 DT 读；它决定 `SHARE_BOTH` 内存是否真的能被 CPU/GPU 双方硬件一致地访问，以及 JM 下 `kbase_pm_cache_snoop_enable/disable`（通过 SMC 开关 CCI snoop，`mali_kbase_smc.c` 在本树的唯一调用者，`pm_driver.c:3224,3239`）。
@@ -1126,6 +1587,17 @@ Soft job 是"由 CPU 在 atom 依赖图里执行的节点"（`mali_kbase_softjob
 
 - **fence**（`mali_kbase_fence.c` / `sync_file.c`）：`kbase_sync_fence_out_create` = `kbase_fence_out_new`（`dma_fence_init(kbase_fence_ops, katom->dma_fence.context, seqno)`）+ `sync_file_create` + `fd_install`；`kbase_sync_fence_in_wait`（`sync_file.c:176-228`）`dma_fence_add_callback(kbase_fence_wait_callback)`，fence 已 signal 则立即返回 0；回调里为避免死锁把完成工作投到 `job_done_wq`（`kbase_sync_fence_wait_worker`）。`STREAM_CREATE` ioctl 只是 `anon_inode_getfd` 一个 timeline 占位 fd。
 - **soft job 超时**：`kctx->soft_job_timeout` 定时器 → `kbasep_soft_job_timeout_worker`（`:371-412`）：`EVENT_WAIT` 超时直接 `JOB_CANCELLED`；`FENCE_WAIT` 在 `CONFIG_MALI_FENCE_DEBUG` 下打印诊断（`DEFAULT_JS_SOFT_JOB_TIMEOUT` 3s，sysfs `soft_job_timeout`）。`SOFT_EVENT_UPDATE` ioctl → `kbase_soft_event_update` 让用户态 signal 一个软事件。
+
+**与 CSF 等 fence 的位置对比**（两边都用 `dma_fence_add_callback`，但挂接对象与唤醒路径不同）：
+
+| | JM | CSF |
+|---|---|---|
+| 用户提交 | soft job：`BASE_JD_REQ_SOFT_FENCE_WAIT`（经 `JOB_SUBMIT`） | KCPU 命令：`BASE_KCPU_COMMAND_TYPE_FENCE_WAIT`（经 `KCPU_QUEUE_ENQUEUE`） |
+| 等待实现 | `kbase_sync_fence_in_wait` → 回调进 `job_done_wq`，完成该 **atom** | `kbase_kcpu_fence_wait_process` → 回调 `enqueue_kcpuq_work`，继续跑 **KCPU queue** |
+| 超时 | `soft_job_timeout`（sysfs） | KCPU `fence_timeout`（约 3s，debug） |
+
+CSF 还有 GPU 侧等内存里的 **CQS/sync object**（固件 `CS_STATUS_WAIT`），不是 dma_fence；见 10.5 / 10.7。JM **没有** KCPU；CSF **没有** soft job 那套 `SOFT_FENCE_WAIT`。
+
 - **事件**（`mali_kbase_event.c`）：`kbase_event_post`（`:162-212`）按 `EVENT_ONLY_ON_FAILURE / EVENT_NEVER / EVENT_COALESCE` 过滤合并后入 `event_list` + `kbase_event_wakeup`；`kbase_event_dequeue` 取出后 `kbase_event_process` 把 atom 置回 `UNUSED`（用户此后才能复用该 `atom_number`）；`kbase_event_close`（`POST_TERM`）后合成 `DRV_TERMINATED`。
 - **kinstr_jm**（`mali_kbase_kinstr_jm.c`）：`KINSTR_JM_FD` 给用户态一个 fd，atom 的 `queue → start → stop → complete` 状态变化流式推送（Perfetto/Streamline 用）。
 - **dummy_job_wa**（`mali_kbase_dummy_job_wa.c`）：`BASE_HW_ISSUE_TTRX_3485` 勘误——shader 上电后必须先跑一个哑 job（固件 `valhall-1691526.wa`），`kbase_pm_invoke(SHADER, PWRON)` 时由 `kbase_dummy_job_wa_execute`（`:114-195`）在屏蔽 IRQ 下直接写 `JS_HEAD_NEXT/CONFIG_NEXT` 并轮询 `JOB_IRQ_RAWSTAT`。
@@ -1408,7 +1880,7 @@ flowchart TD
   J1 -->|JM| J2["kbase_job_done（9.4）"]
   J1 -->|CSF| J3["kbase_csf_interrupt（10.9）"]
   J -->|MMU| M1["kbase_mmu_irq_handler（:75-107）<br/>faults_pending++；读 MMU IRQ_STATUS"]
-  M1 --> M2["kbase_mmu_interrupt（7.3）"]
+  M1 --> M2["kbase_mmu_interrupt（7.4）"]
   J -->|GPU| G1["kbase_gpu_irq_handler（:110-151）<br/>读 GPU_IRQ_STATUS"]
   G1 --> G2["kbase_gpu_interrupt<br/>JM: device_hw_jm.c:53-104 / CSF: device_hw_csf.c:78-181"]
   G2 --> G3["GPU_FAULT → kbase_report_gpu_fault<br/>RESET_COMPLETED → kbase_pm_reset_done<br/>PRFCNT_SAMPLE_COMPLETED → kbase_instr_hwcnt_sample_done（JM）<br/>CLEAN_CACHES_COMPLETED → kbase_clean_caches_done<br/>POWER_CHANGED_ALL（CSF 还含 MCU_STATUS_GPU_IRQ）→ kbase_pm_power_changed → 状态机<br/>CSF: GPU_PROTECTED_FAULT → 复位；DOORBELL_MIRROR → 唤醒；MCU_STATUS_GPU_IRQ → wake_up(event_wait)"]
@@ -1736,7 +2208,7 @@ flowchart TD
   M8 -->|否| M11["正常"]
 ```
 
-一个映射错误不会在 ioctl 阶段暴露，而是在 GPU 运行时变成 MMU fault，然后走第 7.3 节。排查"GPU page fault"时，先用 `address_spaces/asN` / `mem_view` / `mem_zones` debugfs 看 fault 地址落在哪个 region、是不是 growable。
+一个映射错误不会在 ioctl 阶段暴露，而是在 GPU 运行时变成 MMU fault，然后走第 7.4 节。排查"GPU page fault"时，先用 `address_spaces/asN` / `mem_view` / `mem_zones` debugfs 看 fault 地址落在哪个 region、是不是 growable。
 
 ### 15.5 阅读源码时的入口清单
 
@@ -1779,7 +2251,7 @@ flowchart TD
 计入 `kctx->used_pages` 并累加到 `kbdev->memdev.used_pages` 的典型路径：
 
 - **Native 物理页**：`kbase_alloc_phy_pages_helper` → `mem_account_inc`（`mali_kbase_mem.c:1102-1110`）同时加 `kctx->used_pages`、`kbdev->memdev.used_pages`、`kbase_process_page_usage_inc`。
-- **MMU 页表页**：`kbase_mmu_alloc_pgd`（`mmu/mali_kbase_mmu.c:1447` 起）同样加两侧 `used_pages`（见 7.2）。
+- **MMU 页表页**：`kbase_mmu_alloc_pgd`（`mmu/mali_kbase_mmu.c:1447` 起）同样加两侧 `used_pages`（见 7.1、7.3）。
 - 释放对称走 `mem_account_dec` / PGD free 路径。
 
 **不**计入 `used_pages`（因而也不进 `gpu_memory`）的常见项：
