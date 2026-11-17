@@ -1,0 +1,232 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>GPU 分时方案</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* layout: 顶部导航 + 六张图纵向排列；Host 蓝 / Guest 绿 / 仲裁器紫 / 让出琥珀 / 强夺红 */
+:root{
+  --bg:#F1F4F8; --surface:#FFFFFF; --ink:#142033; --muted:#5A6A7F; --line:#CBD5E1; --soft:#E8EDF4;
+  --host:#2D6BDB; --host-t:#E5EDFC;
+  --guest:#13855A; --guest-t:#DFF3E9;
+  --arb:#6A48D1; --arb-t:#ECE7FA;
+  --warn:#B96F08; --warn-t:#FBEBCF;
+  --bad:#CC3A3A; --bad-t:#FBE3E3;
+  --mute:#64748B; --mute-t:#EAEEF3;
+  --sans:"Inter","PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",system-ui,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0B1420; --surface:#111D2E; --ink:#E5ECF5; --muted:#93A4BA; --line:#2B3C54; --soft:#192840;
+  --host:#6FA2FF; --host-t:#152A4D;
+  --guest:#4CCF99; --guest-t:#10332A;
+  --arb:#A68CFF; --arb-t:#251C49;
+  --warn:#F0AE47; --warn-t:#3A2A10;
+  --bad:#FF7B7B; --bad-t:#3C1B20;
+  --mute:#8EA0B8; --mute-t:#1A2A40; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0B1420; --surface:#111D2E; --ink:#E5ECF5; --muted:#93A4BA; --line:#2B3C54; --soft:#192840;
+  --host:#6FA2FF; --host-t:#152A4D;
+  --guest:#4CCF99; --guest-t:#10332A;
+  --arb:#A68CFF; --arb-t:#251C49;
+  --warn:#F0AE47; --warn-t:#3A2A10;
+  --bad:#FF7B7B; --bad-t:#3C1B20;
+  --mute:#8EA0B8; --mute-t:#1A2A40; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.65;
+  padding-block:0 64px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+.wrap{max-width:1180px;margin:0 auto}
+header{padding-block:36px 8px}
+h1{font-size:34px;line-height:1.2;margin:0 0 10px;letter-spacing:.2px;text-wrap:balance}
+.lede{max-width:70ch;color:var(--muted);margin:0}
+nav{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:flex;gap:8px;flex-wrap:wrap;padding-block:14px;margin-top:6px;border-bottom:1px solid var(--line)}
+nav a{color:var(--ink);text-decoration:none;font-size:13.5px;padding:5px 12px;border:1px solid var(--line);border-radius:999px;background:var(--surface)}
+nav a:hover,nav a:focus-visible{border-color:var(--host);color:var(--host);outline:none}
+section{padding-top:44px}
+.sec-head{display:flex;flex-direction:column;gap:4px;margin-bottom:14px}
+.tag{font:500 12px var(--mono);color:var(--muted);letter-spacing:1px;text-transform:uppercase}
+h2{font-size:24px;line-height:1.3;margin:0;text-wrap:balance}
+.sec-head p{margin:0;color:var(--muted);max-width:72ch}
+figure{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:14px}
+figcaption{color:var(--muted);font-size:13.5px;padding:10px 6px 2px}
+.scroll{overflow-x:auto}
+svg{display:block;width:100%;height:auto;font-family:var(--sans)}
+/* svg parts */
+.bx{stroke-width:1.7}
+.c-host{fill:var(--host-t);stroke:var(--host)}
+.c-guest{fill:var(--guest-t);stroke:var(--guest)}
+.c-arb{fill:var(--arb-t);stroke:var(--arb)}
+.c-warn{fill:var(--warn-t);stroke:var(--warn)}
+.c-bad{fill:var(--bad-t);stroke:var(--bad)}
+.c-mute{fill:var(--mute-t);stroke:var(--mute)}
+.strong{stroke-width:3}
+.band{stroke-width:1.5;stroke-dasharray:none;opacity:1}
+.band.c-host{fill:color-mix(in srgb,var(--host) 7%,var(--surface));stroke:color-mix(in srgb,var(--host) 45%,var(--surface))}
+.band.c-guest{fill:color-mix(in srgb,var(--guest) 7%,var(--surface));stroke:color-mix(in srgb,var(--guest) 45%,var(--surface))}
+.bandt{font-weight:700;font-size:17px;letter-spacing:.5px}
+.bandt.h{fill:var(--host)} .bandt.g{fill:var(--guest)}
+.bdg{stroke-width:1.2}
+.bt{font:500 12px var(--mono);stroke:none}
+.bt.c-host,.bt.c-guest,.bt.c-arb{fill:var(--ink)}
+.t{fill:var(--ink);font-weight:600}
+.m{fill:var(--muted);font:400 12.5px var(--mono)}
+.lb{fill:var(--muted);font-size:13px;paint-order:stroke;stroke:var(--surface);stroke-width:5px;stroke-linejoin:round}
+.lb.m{font:400 12px var(--mono)} .lb.b{fill:var(--ink);font-weight:600} .lb.r{fill:var(--bad)} .lb.w{fill:var(--warn)} .lb.v{fill:var(--arb)}
+.sm{fill:var(--ink);font-size:13px} .sm2{font-size:14px} .sm3{fill:var(--ink);font-size:14.5px;stroke:none}
+.sm3.m{font:400 13px var(--mono);fill:var(--muted)} .sm3.r{fill:var(--bad);font-weight:600} .sm3.b{fill:var(--muted)}
+.ed{fill:none;stroke-linecap:round;stroke-linejoin:round}
+.e-host{stroke:var(--host)} .e-guest{stroke:var(--guest)} .e-arb{stroke:var(--arb)} .e-warn{stroke:var(--warn)} .e-bad{stroke:var(--bad)} .e-mute{stroke:var(--mute)}
+.mk-host{fill:var(--host)} .mk-guest{fill:var(--guest)} .mk-arb{fill:var(--arb)} .mk-warn{fill:var(--warn)} .mk-bad{fill:var(--bad)} .mk-mute{fill:var(--mute)}
+.lg{fill:var(--surface);stroke:var(--line);stroke-width:1.2}
+.pill{fill:var(--surface);stroke:var(--guest);stroke-width:1.2}
+.cardr{fill:var(--soft);stroke:var(--line);stroke-width:1.2}
+.ax{stroke:var(--line);stroke-width:2}
+.tk{stroke:var(--muted);stroke-width:1.4;stroke-dasharray:3 4}
+/* html parts */
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin-top:14px}
+.fact{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.fact h3{margin:0 0 4px;font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.4px}
+.fact p{margin:0;font-size:14.5px}
+code{font:400 12.8px var(--mono);background:var(--soft);padding:1px 6px;border-radius:5px;overflow-wrap:anywhere}
+.steps{list-style:none;margin:16px 0 0;padding:0;display:flex;flex-direction:column;gap:0}
+.step{display:grid;grid-template-columns:44px 1fr;gap:0 14px;position:relative}
+.step:not(:last-child)::before{content:"";position:absolute;left:21px;top:44px;bottom:-2px;width:2px;background:var(--line)}
+.dot{width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-weight:700;border:2px solid;background:var(--surface);z-index:1}
+.d-arb{color:var(--arb);border-color:var(--arb)} .d-warn{color:var(--warn);border-color:var(--warn)} .d-bad{color:var(--bad);border-color:var(--bad)} .d-guest{color:var(--guest);border-color:var(--guest)}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 16px;margin-bottom:14px;min-width:0}
+.card h3{margin:0 0 6px;font-size:16px}
+.card .ln{display:flex;gap:8px 14px;flex-wrap:wrap;align-items:baseline;padding:3px 0;border-top:1px dashed var(--line)}
+.card .ln:first-of-type{border-top:0}
+.card .ln span.n{margin-left:auto;font:400 12px var(--mono);color:var(--muted)}
+.card .note{color:var(--muted);font-size:13.5px;margin-top:4px}
+.chain{display:flex;flex-wrap:wrap;gap:6px 8px;align-items:center;margin:8px 0}
+.chip{font:400 12.5px var(--mono);padding:3px 9px;border-radius:999px;border:1px solid var(--line);background:var(--surface)}
+.chip.s{border-color:var(--warn);background:var(--warn-t)}
+.arrow{color:var(--muted);font-size:12.5px}
+.grid8{display:grid;grid-template-columns:repeat(auto-fit,minmax(310px,1fr));gap:12px;margin-top:14px}
+.grid8 .card{margin:0}
+.grid8 .num{font-weight:700;color:var(--host);margin-right:6px}
+.kv{display:grid;grid-template-columns:max-content 1fr;gap:2px 12px;font-size:13.5px;margin:2px 0}
+.kv code{align-self:start}
+.star{color:var(--bad);font-weight:600}
+footer{margin-top:48px;color:var(--muted);font-size:13px;border-top:1px solid var(--line);padding-top:14px}
+@media (max-width:640px){h1{font-size:27px} h2{font-size:21px} .step{grid-template-columns:36px 1fr} .dot{width:34px;height:34px} .step:not(:last-child)::before{left:17px;top:36px}}
+@media (prefers-reduced-motion:no-preference){html{scroll-behavior:smooth}}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="tag">Mali kbase · Arbiter</div>
+  <h1>GPU 分时方案</h1>
+  <p class="lede">Host（Linux）和 Guest（Android）各带一套 GPU 驱动，由仲裁器按时间片轮流使用同一块物理 GPU。六张图依次回答：谁和谁通信，仲裁器怎么切，一个时间片怎么走完，guest 驱动怎么响应，电源与调频怎么配合。</p>
+</header>
+<nav aria-label="图目录">
+  <a href="#topo">1 拓扑</a><a href="#host-fsm">2 仲裁状态机</a><a href="#slice">3 时间片生命周期</a><a href="#guest-fsm">4 Guest 状态机</a><a href="#power-loop">5 仲裁与电源</a><a href="#power-mod">6 power 模块</a>
+</nav>
+
+<section id="topo">
+  <div class="sec-head"><span class="tag">图 1</span><h2>Host 与 Guest 谁在哪一侧</h2>
+  <p>Guest 的仲裁消息不直接发给仲裁器，先出 guest 内核，经 HVC / vclink 到 host 一侧的 guest_xenback，再进 mali_arbiter。</p></div>
+  <figure><div class="scroll"><svg viewBox="0 0 1200 700" role="img" aria-label="Host 与 Guest 通过 xenfront/xenback 与 mali_arbiter 通信的拓扑" style="min-width:900px"><defs><marker id="mk-host" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-host"/></marker><marker id="mk-guest" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-guest"/></marker><marker id="mk-arb" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-arb"/></marker><marker id="mk-warn" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-warn"/></marker><marker id="mk-bad" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-bad"/></marker><marker id="mk-mute" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-mute"/></marker></defs><rect class="band c-host" x="20" y="20" width="1160" height="360" rx="18"/><text class="bandt h" x="44" y="56" text-anchor="start">HOST（dom0）· Linux 内核</text><rect class="band c-guest" x="20" y="410" width="1160" height="270" rx="18"/><text class="bandt g" x="44" y="446" text-anchor="start">GUEST · Android 内核</text><rect class="bx c-host" x="50" y="90" width="270" height="100" rx="12"/><text class="t" x="185.0" y="120" text-anchor="middle" style="font-size:17px">host kbase · VM id=0</text><text class="m" x="185.0" y="144" text-anchor="middle">mali_kbase_core_linux.c</text><rect class="bx c-host" x="420" y="90" width="270" height="100" rx="12"/><text class="t" x="555.0" y="120" text-anchor="middle" style="font-size:17px">host_xenfront</text><text class="m" x="555.0" y="144" text-anchor="middle">mali_arbif_host_xenfront_main.c</text><rect class="bdg c-host" x="580.6" y="79" width="99.4" height="22" rx="11"/><text class="bt c-host" x="630.3" y="94" text-anchor="middle">xenfront.ko</text><rect class="bx c-host" x="790" y="90" width="270" height="100" rx="12"/><text class="t" x="925.0" y="120" text-anchor="middle" style="font-size:17px">host_xenback</text><text class="m" x="925.0" y="144" text-anchor="middle">mali_arbif_host_xenback_main.c</text><rect class="bdg c-host" x="921.0" y="79" width="129.0" height="22" rx="11"/><text class="bt c-host" x="985.5" y="94" text-anchor="middle">mali_arbiter.ko</text><rect class="bx c-guest" x="420" y="240" width="270" height="100" rx="12"/><text class="t" x="555.0" y="270" text-anchor="middle" style="font-size:17px">guest_xenback</text><text class="m" x="555.0" y="294" text-anchor="middle">vcelink_guest_backend.c</text><rect class="bdg c-guest" x="551.0" y="229" width="129.0" height="22" rx="11"/><text class="bt c-guest" x="615.5" y="244" text-anchor="middle">mali_arbiter.ko</text><rect class="bx c-arb" x="790" y="240" width="360" height="110" rx="12"/><text class="t" x="970.0" y="270" text-anchor="middle" style="font-size:17px">mali_arbiter（核心）</text><text class="m" x="970.0" y="294" text-anchor="middle">mali_arbiter_main.c</text><text class="m" x="970.0" y="313" text-anchor="middle">run_next_vm · grant · 时间片</text><rect class="bdg c-arb" x="1011.0" y="229" width="129.0" height="22" rx="11"/><text class="bt c-arb" x="1075.5" y="244" text-anchor="middle">mali_arbiter.ko</text><rect class="bx c-guest" x="50" y="500" width="270" height="110" rx="12"/><text class="t" x="185.0" y="530" text-anchor="middle" style="font-size:17px">guest kbase</text><text class="m" x="185.0" y="554" text-anchor="middle">mali_kbase_arbiter_pm.c</text><text class="m" x="185.0" y="573" text-anchor="middle">mali_kbase_arbif.c</text><rect class="bx c-guest" x="420" y="500" width="270" height="110" rx="12"/><text class="t" x="555.0" y="530" text-anchor="middle" style="font-size:17px">guest_xenfront</text><text class="m" x="555.0" y="554" text-anchor="middle">mali_arbif_guest_xenfront_main.c</text><path class="ed e-host" d="M320,140 H420" style="stroke-width:2.4" marker-end="url(#mk-host)"/><path class="ed e-host" d="M690,140 H790" style="stroke-width:2.4" marker-end="url(#mk-host)"/><text class="lb" x="740" y="126" text-anchor="middle">c2s / s2c</text><text class="lb" x="740" y="170" text-anchor="middle">内存环</text><path class="ed e-arb" d="M925,190 V240" style="stroke-width:2.4" marker-end="url(#mk-arb)"/><text class="lb" x="937" y="222" text-anchor="start">host_xenback → arbiter</text><path class="ed e-guest" d="M690,290 H790" style="stroke-width:2.4" stroke-dasharray="7 6" marker-end="url(#mk-guest)" marker-start="url(#mk-guest)"/><text class="lb" x="740" y="278" text-anchor="middle">仲裁请求</text><text class="lb" x="740" y="314" text-anchor="middle">GRANTED / STOP</text><path class="ed e-guest" d="M320,555 H420" style="stroke-width:2.4" marker-end="url(#mk-guest)"/><text class="lb" x="370" y="543" text-anchor="middle">仲裁请求</text><path class="ed e-guest" d="M555,500 V340" style="stroke-width:2.8" stroke-dasharray="7 6" marker-end="url(#mk-guest)" marker-start="url(#mk-guest)"/><rect x="466" y="381" width="178" height="26" rx="13" class="pill"/><text class="lb b" x="555" y="399" text-anchor="middle">HVC / vclink · 跨 VM</text><rect class="lg" x="50" y="240" width="270" height="100" rx="12"/><path class="ed e-mute" d="M68,272 H118" style="stroke-width:2.4" marker-end="url(#mk-mute)"/><text class="lb" x="130" y="277" text-anchor="start">同一 VM 内调用</text><path class="ed e-mute" d="M68,306 H118" style="stroke-width:2.4" stroke-dasharray="7 6" marker-end="url(#mk-mute)" marker-start="url(#mk-mute)"/><text class="lb" x="130" y="311" text-anchor="start">跨 VM 通道 / 双向</text><rect class="lg" x="740" y="480" width="410" height="170" rx="12"/><text class="lb b" x="760" y="506" text-anchor="start">一次请求怎么走</text><text class="sm" x="760" y="531.0" text-anchor="start">① guest kbase 要用 GPU，经 mali_kbase_arbif 发出请求</text><text class="sm" x="760" y="548.5" text-anchor="start">② guest_xenfront 通过 HVC / vclink 把请求送到</text><text class="sm" x="760" y="566.0" text-anchor="start">    host 一侧的 guest_xenback</text><text class="sm" x="760" y="583.5" text-anchor="start">③ mali_arbiter 入队；轮到时回 GRANTED，</text><text class="sm" x="760" y="601.0" text-anchor="start">    到点发 GPU_STOP 让它交还</text><text class="sm" x="760" y="618.5" text-anchor="start">host 自己（VM id=0）走 host_xenfront → host_xenback</text><text class="sm" x="760" y="636.0" text-anchor="start">进入同一个 mali_arbiter，和 guest 平等排队</text></svg></div>
+  <figcaption>仲裁器核心和两个 xenback 都编进 mali_arbiter.ko，运行在 host 内核里。host 自己的 kbase（VM id=0）和 guest 在仲裁器眼里是平等的 VM。</figcaption></figure>
+</section>
+
+<section id="host-fsm">
+  <div class="sec-head"><span class="tag">图 2</span><h2>Host 仲裁器：四态状态机</h2>
+  <p>只有 1 个请求时独占 GPU，不分时；第 2 个 VM 入队后进入分时轮转。</p></div>
+  <figure><div class="scroll"><svg viewBox="0 0 900 620" role="img" aria-label="仲裁器四态状态机" style="min-width:760px"><defs><marker id="mk-host" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-host"/></marker><marker id="mk-guest" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-guest"/></marker><marker id="mk-arb" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-arb"/></marker><marker id="mk-warn" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-warn"/></marker><marker id="mk-bad" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-bad"/></marker><marker id="mk-mute" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-mute"/></marker></defs><rect class="bx c-mute" x="40" y="60" width="200" height="84" rx="12"/><text class="t" x="140.0" y="90" text-anchor="middle" style="font-size:17px">ARB_NO_REQ</text><text class="m" x="140.0" y="114" text-anchor="middle">无请求</text><rect class="bx c-host" x="380" y="60" width="220" height="84" rx="12"/><text class="t" x="490.0" y="90" text-anchor="middle" style="font-size:16px">ARB_SINGLE_REQ</text><text class="m" x="490.0" y="114" text-anchor="middle">仅 1 个请求 · 独占，不分时</text><rect class="bx c-guest" x="380" y="260" width="220" height="84" rx="12"/><text class="t" x="490.0" y="290" text-anchor="middle" style="font-size:17px">ARB_RUNNING</text><text class="m" x="490.0" y="314" text-anchor="middle">多 VM 分时轮转 · 启动 req_tmr</text><rect class="bx c-warn" x="380" y="460" width="220" height="84" rx="12"/><text class="t" x="490.0" y="490" text-anchor="middle" style="font-size:16px">ARB_GPU_STOPPING</text><text class="m" x="490.0" y="514" text-anchor="middle">已发 STOP · 等 VM 让出</text><text class="m" x="490.0" y="533" text-anchor="middle">启动 stop_tmr</text><rect class="bx c-bad" x="680" y="460" width="200" height="84" rx="12"/><text class="t" x="780.0" y="490" text-anchor="middle" style="font-size:16px">handle_gpu_lost</text><text class="m" x="780.0" y="514" text-anchor="middle">发 GPU_LOST，强制夺回</text><path class="ed e-host" d="M240,80 H380" style="stroke-width:2.4" marker-end="url(#mk-host)"/><text class="lb" x="310" y="68" text-anchor="middle">gpu_request（首个）</text><path class="ed e-mute" d="M380,124 H240" style="stroke-width:2.4" marker-end="url(#mk-mute)"/><text class="lb" x="310" y="142" text-anchor="middle">队列变空</text><text class="lb m" x="310" y="157" text-anchor="middle">run_next_vm</text><path class="ed e-guest" d="M490,144 V260" style="stroke-width:2.4" marker-end="url(#mk-guest)"/><text class="lb" x="502" y="196" text-anchor="start">gpu_request（再来 1 个 VM）</text><path class="ed e-warn" d="M490,344 V460" style="stroke-width:2.4" marker-end="url(#mk-warn)"/><text class="lb" x="502" y="384" text-anchor="start">req_tmr 到期（仅 RUNNING）</text><text class="lb" x="502" y="404" text-anchor="start">或 gpu_idle 抢占</text><text class="lb m" x="502" y="424" text-anchor="start">→ stop_gpu_locked</text><path class="ed e-guest" d="M380,502 H320 V302 H380" style="stroke-width:2.4" marker-end="url(#mk-guest)"/><text class="lb" x="308" y="390" text-anchor="end">gpu_stopped →</text><text class="lb m" x="308" y="410" text-anchor="end">run_next_vm</text><text class="lb" x="308" y="430" text-anchor="end">切下一个 VM</text><path class="ed e-mute" d="M380,272 H140 V144" style="stroke-width:2.4" marker-end="url(#mk-mute)"/><text class="lb" x="150" y="232" text-anchor="start">队列变空</text><path class="ed e-bad" d="M600,502 H680" style="stroke-width:2.4" marker-end="url(#mk-bad)"/><text class="lb" x="640" y="478" text-anchor="middle">stop_tmr</text><text class="lb" x="640" y="494" text-anchor="middle">到期</text><text class="lb" x="640" y="526" text-anchor="middle">&amp; 有等待者</text><path class="ed e-bad" d="M780,460 V302 H600" style="stroke-width:2.4" stroke-dasharray="7 6" marker-end="url(#mk-bad)"/><text class="lb" x="792" y="384" text-anchor="start">强切下一个 VM</text><text class="lb w" x="40" y="600" text-anchor="start">req_tmr：只在 ARB_RUNNING 启动（host 7 ms / guest 8 ms）；stop_tmr：只在 ARB_GPU_STOPPING 启动（2 s）</text></svg></div>
+  <figcaption>核心代码在 mali_arbiter_main.c，决策入口是 run_next_vm_locked()，授予由 grant_gpu_to_next_locked() 完成。</figcaption></figure>
+  <div class="facts">
+    <div class="fact"><h3>算法</h3><p>req_list 上的 FIFO round-robin：入队尾、取队首、让出后回队尾。无优先级、权重、配额。</p></div>
+    <div class="fact"><h3>两个定时器</h3><p><code>req_tmr</code> 是时间片，只在 ARB_RUNNING（多 VM 竞争）时启动；<code>stop_tmr</code> 是让出看门狗，2000 ms。</p></div>
+    <div class="fact"><h3>时间片时长</h3><p>host（id=0）<code>linux_request_timeout</code> 7 ms；guest <code>android_request_timeout</code> 8 ms。都是硬编码的 static 值。</p></div>
+    <div class="fact"><h3>idle 抢占</h3><p>VM 发 <code>VM_ARB_GPU_IDLE</code>，仲裁器停掉 req_tmr 并立即 <code>stop_gpu</code>，不等时间片到。</p></div>
+  </div>
+</section>
+
+<section id="slice">
+  <div class="sec-head"><span class="tag">图 3</span><h2>一个时间片的完整生命周期</h2>
+  <p>从授予 GPU 到切走，共六步；VM 正常让出走①→⑤并回到①，不让出则走⑥。</p></div>
+  <figure><div class="scroll"><svg viewBox="0 0 1100 170" role="img" aria-label="一个时间片的时间轴示意" style="min-width:820px"><defs><marker id="mk-host" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-host"/></marker><marker id="mk-guest" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-guest"/></marker><marker id="mk-arb" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-arb"/></marker><marker id="mk-warn" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-warn"/></marker><marker id="mk-bad" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-bad"/></marker><marker id="mk-mute" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-mute"/></marker></defs><line class="ax" x1="30" y1="95" x2="1070" y2="95"/><rect class="bx c-guest" x="60" y="72" width="460" height="46" rx="10"/><text class="t sm2" x="290" y="100" text-anchor="middle">VM-A 正常渲染 · host 7 ms / guest 8 ms</text><rect class="bx c-warn" x="520" y="72" width="240" height="46" rx="10"/><text class="t sm2" x="640" y="100" text-anchor="middle">VM-A 停手、flush</text><rect class="bx c-host" x="760" y="72" width="290" height="46" rx="10"/><text class="t sm2" x="905" y="100" text-anchor="middle">VM-B 拿到 GRANTED，开始新片</text><line class="tk" x1="60" y1="46" x2="60" y2="95"/><text class="lb b" x="60" y="24" text-anchor="middle">GRANTED</text><text class="lb m" x="60" y="40" text-anchor="middle">grant_gpu_to_next</text><line class="tk" x1="520" y1="46" x2="520" y2="95"/><text class="lb b" x="520" y="24" text-anchor="middle">req_tmr 到期</text><text class="lb m" x="520" y="40" text-anchor="middle">→ GPU_STOP</text><line class="tk" x1="760" y1="46" x2="760" y2="95"/><text class="lb b" x="760" y="24" text-anchor="middle">gpu_stopped</text><text class="lb m" x="760" y="40" text-anchor="middle">→ run_next_vm</text><path class="ed e-bad" d="M700,118 V150" style="stroke-width:2.4" marker-end="url(#mk-bad)"/><text class="lb r" x="712" y="148" text-anchor="start">stop_tmr 2000 ms 内没让出 → GPU_LOST，强切下一个</text><text class="lb w" x="640" y="64" text-anchor="middle">≤ 2000 ms</text></svg></div>
+  <figcaption>时间轴只示意先后顺序，不按比例。</figcaption></figure>
+  <ol class="steps">
+    <li class="step"><div class="dot d-arb">①</div><div class="card"><h3>授予 + 起片</h3>
+      <div class="ln"><code>run_next_vm_locked</code><span class="arrow">→</span><code>grant_gpu_to_next_locked</code><span>取队首，经 HVC 发 GRANTED</span></div>
+      <div class="ln"><span class="arrow">→</span><code>start_req_timer_locked(7/8ms)</code><span>启动 req_tmr</span></div>
+      <div class="note">VM 在这个时间片内正常渲染。</div></div></li>
+    <li class="step"><div class="dot d-warn">②</div><div class="card"><h3>片到期（硬中断）</h3>
+      <div class="ln"><code>req_timer_isr</code><span class="n">:1264</span></div>
+      <div class="note">中断里只 queue_work，不拿锁。</div></div></li>
+    <li class="step"><div class="dot d-warn">③</div><div class="card"><h3>处理到期</h3>
+      <div class="ln"><code>req_timeout_worker</code><span class="n">:1994</span></div>
+      <div class="ln"><span>state == ARB_RUNNING</span><span class="arrow">→</span><code>stop_gpu_locked</code><span class="n">:2028</span></div></div></li>
+    <li class="step"><div class="dot d-bad">④</div><div class="card"><h3>通知让出</h3>
+      <div class="ln"><code>stop_gpu_locked</code><span class="n">:1819</span></div>
+      <div class="ln"><code>set_state(ARB_GPU_STOPPING)</code><span class="n">:1839</span></div>
+      <div class="ln"><code>start_stop_timer_locked(yield_timeout=2000ms)</code><span>让出看门狗</span><span class="n">:1847</span></div>
+      <div class="ln"><code>active_vm-&gt;info.ops.gpu_stop(vm)</code><span>发 ARB_VM_GPU_STOP</span><span class="n">:1848</span></div>
+      <div class="note">VM 停手并 flush，回到 STOPPED。</div></div></li>
+    <li class="step"><div class="dot d-guest">⑤</div><div class="card"><h3>VM 已停，切下一个</h3>
+      <div class="ln"><code>gpu_stopped(arb_vm, req_again)</code><span class="n">:1615</span></div>
+      <div class="ln"><code>wake_up(vm_stopped_wait)</code><span>grant_state = 0</span><span class="n">:1657–1665</span></div>
+      <div class="ln"><code>if (req_again) list_move_tail(&amp;entry, req_list)</code><span>让出者回队尾</span><span class="n">:1674</span></div>
+      <div class="ln"><code>else list_del_init(&amp;entry)</code><span class="n">:1669</span></div>
+      <div class="ln"><code>remove_active_vm(partition)</code><span class="n">:1677</span></div>
+      <div class="ln"><code>run_next_vm_locked(partition)</code><span>回到 ①，切下一个</span><span class="n">:1680</span></div></div></li>
+    <li class="step"><div class="dot d-bad">⑥</div><div class="card"><h3>强制夺回（VM 超时不让）</h3>
+      <div class="ln"><code>stop_timer_isr</code><span class="n">:1281</span><span class="arrow">→</span><code>stop_timeout_worker</code><span class="n">:2038</span><span class="arrow">→</span><code>handle_gpu_lost_locked</code><span class="n">:1858</span></div>
+      <div class="ln"><code>active_vm-&gt;info.ops.gpu_lost(vm)</code><span>发 ARB_VM_GPU_LOST，强切下一个</span></div></div></li>
+  </ol>
+</section>
+
+<section id="guest-fsm">
+  <div class="sec-head"><span class="tag">图 4</span><h2>Guest kbase：VM 状态机</h2>
+  <p>仲裁器发来 GRANTED / STOP，guest 驱动据此在“持有 GPU”和“不持有 GPU”之间切换。</p></div>
+  <figure><div class="scroll"><svg viewBox="0 0 1200 740" role="img" aria-label="Guest kbase 的 VM 状态机" style="min-width:900px"><defs><marker id="mk-host" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-host"/></marker><marker id="mk-guest" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-guest"/></marker><marker id="mk-arb" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-arb"/></marker><marker id="mk-warn" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-warn"/></marker><marker id="mk-bad" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-bad"/></marker><marker id="mk-mute" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-mute"/></marker></defs><rect class="bx c-host" x="40" y="60" width="230" height="80" rx="12"/><text class="t" x="155.0" y="90" text-anchor="middle" style="font-size:16px">INITIALIZING</text><text class="m" x="155.0" y="114" text-anchor="middle">初始化</text><rect class="bx c-host" x="40" y="200" width="230" height="80" rx="12"/><text class="t" x="155.0" y="230" text-anchor="middle" style="font-size:14px">INITIALIZING_WITH_GPU</text><text class="m" x="155.0" y="254" text-anchor="middle">已拿到 GPU，初始化中</text><rect class="bx c-guest" x="440" y="60" width="230" height="80" rx="12"/><text class="t" x="555.0" y="90" text-anchor="middle" style="font-size:16px">STARTING</text><text class="m" x="555.0" y="114" text-anchor="middle">拿到 GPU，恢复 PM</text><rect class="bx c-guest strong" x="440" y="250" width="230" height="80" rx="12"/><text class="t" x="555.0" y="280" text-anchor="middle" style="font-size:17px">ACTIVE</text><text class="m" x="555.0" y="304" text-anchor="middle">正在用 GPU</text><rect class="bx c-guest" x="440" y="440" width="230" height="80" rx="12"/><text class="t" x="555.0" y="470" text-anchor="middle" style="font-size:17px">IDLE</text><text class="m" x="555.0" y="494" text-anchor="middle">持有 GPU，暂无作业</text><rect class="bx c-warn" x="820" y="250" width="230" height="80" rx="12"/><text class="t" x="935.0" y="280" text-anchor="middle" style="font-size:15px">STOPPING_ACTIVE</text><text class="m" x="935.0" y="304" text-anchor="middle">被要求让出，仍有作业</text><rect class="bx c-warn" x="820" y="440" width="230" height="80" rx="12"/><text class="t" x="935.0" y="470" text-anchor="middle" style="font-size:15px">STOPPING_IDLE</text><text class="m" x="935.0" y="494" text-anchor="middle">被要求让出，已空闲</text><rect class="bx c-bad" x="820" y="630" width="230" height="80" rx="12"/><text class="t" x="935.0" y="660" text-anchor="middle" style="font-size:17px">STOPPED</text><text class="m" x="935.0" y="684" text-anchor="middle">不持有 GPU</text><rect class="bx c-bad" x="820" y="60" width="230" height="80" rx="12"/><text class="t" x="935.0" y="90" text-anchor="middle" style="font-size:13px">STOPPED_GPU_REQUESTED</text><text class="m" x="935.0" y="114" text-anchor="middle">已申请，等 GRANTED</text><path class="ed e-host" d="M155,140 V200" style="stroke-width:2.4" marker-end="url(#mk-host)"/><text class="lb" x="167" y="176" text-anchor="start">GPU_GRANTED</text><path class="ed e-host" d="M270,250 H350 V290 H440" style="stroke-width:2.4" marker-end="url(#mk-host)"/><text class="lb" x="276" y="236" text-anchor="start">GPU_INITIALIZED_EVT</text><text class="lb m" x="360" y="278" text-anchor="start">active_count &gt; 0</text><path class="ed e-host" d="M270,262 H330 V480 H440" style="stroke-width:2.4" marker-end="url(#mk-host)"/><text class="lb m" x="338" y="500" text-anchor="start">否则</text><path class="ed e-guest" d="M555,140 V250" style="stroke-width:2.4" marker-end="url(#mk-guest)"/><text class="lb" x="567" y="200" text-anchor="start">REF_EVENT</text><path class="ed e-guest" d="M500,330 V440" style="stroke-width:2.4" marker-end="url(#mk-guest)"/><text class="lb" x="490" y="388" text-anchor="end">GPU_IDLE_EVENT</text><path class="ed e-guest" d="M620,440 V330" style="stroke-width:2.4" marker-end="url(#mk-guest)"/><text class="lb" x="632" y="380" text-anchor="start">REF_EVENT</text><text class="lb m" x="632" y="398" text-anchor="start">ctx_active</text><path class="ed e-warn" d="M670,290 H820" style="stroke-width:2.4" marker-end="url(#mk-warn)"/><text class="lb" x="745" y="278" text-anchor="middle">GPU_STOP_EVT</text><path class="ed e-warn" d="M670,480 H820" style="stroke-width:2.4" marker-end="url(#mk-warn)"/><text class="lb" x="745" y="468" text-anchor="middle">GPU_STOP_EVT</text><path class="ed e-warn" d="M935,440 V330" style="stroke-width:2.4" stroke-dasharray="7 6" marker-end="url(#mk-warn)"/><text class="lb" x="947" y="382" text-anchor="start">有新引用</text><text class="lb m" x="947" y="400" text-anchor="start">REF_EVENT</text><path class="ed e-bad" d="M935,250 V140" style="stroke-width:2.4" marker-end="url(#mk-bad)"/><text class="lb" x="947" y="196" text-anchor="start">vm_stopped</text><text class="lb m" x="947" y="214" text-anchor="start">重新申请 GPU</text><path class="ed e-bad" d="M935,520 V630" style="stroke-width:2.4" marker-end="url(#mk-bad)"/><text class="lb" x="947" y="580" text-anchor="start">vm_stopped</text><path class="ed e-bad" d="M1050,670 H1150 V100 H1050" style="stroke-width:2.4" stroke-dasharray="7 6" marker-end="url(#mk-bad)"/><text class="lb" x="1142" y="398" text-anchor="end">ctx_active</text><text class="lb" x="1142" y="416" text-anchor="end">再要 GPU</text><path class="ed e-bad" d="M820,100 H670" style="stroke-width:2.4" marker-end="url(#mk-bad)"/><text class="lb" x="745" y="88" text-anchor="middle">GPU_GRANTED</text><rect class="lg" x="40" y="400" width="250" height="150" rx="12"/><rect class="bx c-guest" x="60" y="420" width="34" height="20" rx="5"/><text class="lb" x="106" y="435" text-anchor="start">持有 GPU</text><rect class="bx c-warn" x="60" y="450" width="34" height="20" rx="5"/><text class="lb" x="106" y="465" text-anchor="start">正在让出</text><rect class="bx c-bad" x="60" y="480" width="34" height="20" rx="5"/><text class="lb" x="106" y="495" text-anchor="start">不持有 GPU</text><rect class="bx c-host" x="60" y="510" width="34" height="20" rx="5"/><text class="lb" x="106" y="525" text-anchor="start">初始化</text></svg></div>
+  <figcaption>状态名取自 kbase_arbiter_vm_state；跳转按 mali_kbase_arbiter_pm.c 核对。比原图多了 INITIALIZING_WITH_GPU 和 STOPPED_GPU_REQUESTED 两个状态，STOPPING_IDLE → STOPPING_ACTIVE 的方向也以源码为准。</figcaption></figure>
+  <div class="facts">
+    <div class="fact"><h3>启动时被收回</h3><p>STARTING 状态收到 GPU_STOP_EVT，直接转 STOPPING_ACTIVE，图里没有画这条线。</p></div>
+    <div class="fact"><h3>OS 休眠路径</h3>
+      <div class="chain"><span class="chip s">STOPPING_*</span><span class="arrow">OS_SUSPEND →</span><span class="chip">SUSPEND_PENDING</span><span class="arrow">→</span><span class="chip">SUSPENDED</span></div>
+      <div class="chain"><span class="chip">STOPPED_GPU_REQUESTED</span><span class="arrow">OS_SUSPEND →</span><span class="chip">SUSPEND_WAIT_FOR_GRANT</span><span class="arrow">→</span><span class="chip">SUSPENDED</span></div>
+      <div class="chain"><span class="chip">SUSPENDED</span><span class="arrow">OS_RESUME →</span><span class="chip">STOPPED_GPU_REQUESTED</span><span class="arrow">（重新申请）</span></div></div>
+  </div>
+</section>
+
+<section id="power-loop">
+  <div class="sec-head"><span class="tag">图 5</span><h2>仲裁策略与 power：双向环</h2>
+  <p>仲裁器管上下电，power 反过来把利用率交给仲裁器。</p></div>
+  <figure><div class="scroll"><svg viewBox="0 0 1000 560" role="img" aria-label="仲裁器与 power 模块的双向环" style="min-width:780px"><defs><marker id="mk-host" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-host"/></marker><marker id="mk-guest" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-guest"/></marker><marker id="mk-arb" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-arb"/></marker><marker id="mk-warn" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-warn"/></marker><marker id="mk-bad" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-bad"/></marker><marker id="mk-mute" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-mute"/></marker></defs><rect class="bx c-warn" x="60" y="210" width="270" height="150" rx="12"/><text class="t" x="195.0" y="240" text-anchor="middle" style="font-size:17px">power</text><text class="m" x="195.0" y="264" text-anchor="middle">时钟 / 电压</text><text class="m" x="195.0" y="283" text-anchor="middle">DVFS（devfreq）</text><rect class="bx c-arb" x="670" y="210" width="270" height="150" rx="12"/><text class="t" x="805.0" y="240" text-anchor="middle" style="font-size:17px">arbiter</text><text class="m" x="805.0" y="264" text-anchor="middle">分时状态机</text><text class="m" x="805.0" y="283" text-anchor="middle">利用率统计</text><rect class="cardr" x="120" y="24" width="760" height="124" rx="12"/><text class="lb b v" x="140" y="52" text-anchor="start">控制方向：仲裁器 → power</text><text class="sm3" x="140" y="80" text-anchor="start">队列 空 → 非空</text><text class="sm3 m" x="290" y="80" text-anchor="start">gpu_request → arb_gpu_power_on</text><text class="sm3 r" x="740" y="80" text-anchor="start">★ 空操作</text><text class="sm3" x="140" y="106" text-anchor="start">队列 非空 → 空</text><text class="sm3 m" x="290" y="106" text-anchor="start">run_next_vm → arb_gpu_power_off</text><text class="sm3 r" x="740" y="106" text-anchor="start">★ 空操作</text><text class="sm3 b" x="140" y="134" text-anchor="start">VM 之间切换时队列始终非空 ⇒ 不上下电，GPU 常驻上电</text><path class="ed e-arb" d="M805,210 V172 H195 V208" style="stroke-width:3" marker-end="url(#mk-arb)"/><rect class="cardr" x="120" y="420" width="760" height="110" rx="12"/><text class="lb b w" x="140" y="448" text-anchor="start">DVFS 方向：power → 仲裁器</text><text class="sm3 m" x="140" y="478" text-anchor="start">devfreq_status → arb_get_utilisation</text><text class="sm3" x="490" y="478" text-anchor="start">遍历所有 VM，取最忙的一个</text><text class="sm3 b" x="140" y="506" text-anchor="start">可在 debugfs 的 max_utilization 看到当前最高的 VM 利用率</text><path class="ed e-warn" d="M195,362 V400 H805 V364" style="stroke-width:3" marker-end="url(#mk-warn)"/><text class="lb" x="500" y="198" text-anchor="middle"></text></svg></div>
+  <figcaption>★ 空操作：arb_gpu_power_on / arb_gpu_power_off 在代码里已被注释掉。</figcaption></figure>
+</section>
+
+<section id="power-mod">
+  <div class="sec-head"><span class="tag">图 6</span><h2>mali_gpu_power 模块功能块</h2>
+  <p>模块分八块。先看块与块之间谁调谁，再看每块里有什么。</p></div>
+  <figure><div class="scroll"><svg viewBox="0 0 1000 240" role="img" aria-label="mali_gpu_power 模块各块之间的调用关系" style="min-width:760px"><defs><marker id="mk-host" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-host"/></marker><marker id="mk-guest" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-guest"/></marker><marker id="mk-arb" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-arb"/></marker><marker id="mk-warn" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-warn"/></marker><marker id="mk-bad" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-bad"/></marker><marker id="mk-mute" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk mk-mute"/></marker></defs><rect class="bx c-arb" x="30" y="88" width="170" height="64" rx="12"/><text class="t" x="115.0" y="126.0" text-anchor="middle" style="font-size:16px">仲裁器</text><rect class="bx c-host" x="290" y="20" width="170" height="64" rx="12"/><text class="t" x="375.0" y="58.0" text-anchor="middle" style="font-size:16px">① 对外接口</text><rect class="bx c-warn" x="620" y="20" width="170" height="64" rx="12"/><text class="t" x="705.0" y="58.0" text-anchor="middle" style="font-size:16px">③ 电源 / 时钟</text><rect class="bx c-warn" x="620" y="156" width="170" height="64" rx="12"/><text class="t" x="705.0" y="194.0" text-anchor="middle" style="font-size:16px">④ DVFS 块</text><rect class="bx c-host" x="290" y="156" width="170" height="64" rx="12"/><text class="t" x="375.0" y="194.0" text-anchor="middle" style="font-size:16px">② 反向回调</text><path class="ed e-arb" d="M200,100 H245 V52 H290" style="stroke-width:2.4" marker-end="url(#mk-arb)"/><path class="ed e-bad" d="M460,52 H620" style="stroke-width:2.4" stroke-dasharray="7 6" marker-end="url(#mk-bad)"/><text class="lb r" x="540" y="38" text-anchor="middle">power_on/off 已注释</text><path class="ed e-warn" d="M705,156 V84" style="stroke-width:2.4" marker-end="url(#mk-warn)"/><text class="lb" x="717" y="126" text-anchor="start">调频调压：clk / regulator</text><path class="ed e-warn" d="M620,188 H460" style="stroke-width:2.4" marker-end="url(#mk-warn)"/><text class="lb" x="540" y="176" text-anchor="middle">power 调用</text><path class="ed e-arb" d="M290,188 H245 V140 H200" style="stroke-width:2.4" marker-end="url(#mk-arb)"/><text class="lb" x="246" y="110" text-anchor="start"></text></svg></div>
+  <figcaption>上排是仲裁器向下调用，下排是 power 向上回调。①→③ 这条在代码里被注释掉了。</figcaption></figure>
+  <div class="grid8">
+    <div class="card"><h3><span class="num">①</span>对外接口 <code>mali_gpu_power_ops</code></h3>
+      <div class="kv"><code>register_arb</code><span>→ register_arb_dev</span><code>unregister_arb</code><span>→ unregister_arb_dev</span><code>gpu_active</code><span>→ power_on <span class="star">★注释</span></span><code>gpu_idle</code><span>→ power_off <span class="star">★注释</span></span></div></div>
+    <div class="card"><h3><span class="num">②</span>反向回调 <code>arbiter_cb_ops</code></h3>
+      <div class="kv"><code>arb_get_utilisation</code><span></span><code>update_freq</code><span></span></div>
+      <div class="note">由仲裁器实现，power 来调用。</div></div>
+    <div class="card"><h3><span class="num">③</span>电源 / 时钟块</h3>
+      <div class="kv"><code>clk_enable/disable</code><span></span><code>regulator_set_voltage</code><span></span><code>pm_runtime_get/put</code><span></span></div>
+      <div class="note">power_on / power_off 已注释。</div></div>
+    <div class="card"><h3><span class="num">④</span>DVFS 块 <code>devfreq</code></h3>
+      <div class="kv"><code>devfreq_target</code><span>调频 + 调压</span><code>devfreq_status</code><span>读利用率</span><code>devfreq_cur_freq</code><span></span><code>OPP 表</code><span>current_freq</span></div></div>
+    <div class="card"><h3><span class="num">⑤</span>Arbiter 注册管理</h3>
+      <div class="kv"><code>arb_list</code><span>支持多个仲裁器</span><code>arb_count</code><span>分配唯一 id</span></div></div>
+    <div class="card"><h3><span class="num">⑥</span>PTM 子设备管理</h3>
+      <div class="kv"><code>gpu_bus_create_children</code><span></span><code>system_dev / assign_dev</code><span></span><code>gpu_bus_notifier</code><span></span></div></div>
+    <div class="card"><h3><span class="num">⑦</span>生命周期</h3>
+      <div class="kv"><code>probe</code><span><code>parse_dt</code> 取 clk / regulator / pm_runtime → 绑定 ops → 建 DVFS / debugfs</span><code>remove</code><span>停 DVFS、<code>pm_runtime_disable</code>、<code>clk_unprepare/put</code>、<code>regulator_put</code> 等</span></div></div>
+    <div class="card"><h3><span class="num">⑧</span>debugfs</h3>
+      <div class="kv"><code>max_utilization</code><span>只读，当前最高的 VM 利用率（<code>max_util_debugfs_get:980</code> / <code>create_debugfs:1004</code>）</span></div></div>
+  </div>
+</section>
+
+<footer>重画自 pics 目录中的八张截图（拓扑、host / guest 状态机、仲裁策略与 power、power 模块、时间片生命周期）。图 4 的状态跳转另外对照了 midgard/arbiter/mali_kbase_arbiter_pm.c；其余各图的函数名、行号和时间值沿用截图，未对照源码。</footer>
+</div>
+
+</body></html>
